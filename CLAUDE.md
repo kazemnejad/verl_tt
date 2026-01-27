@@ -9,12 +9,13 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - Fork of [verl](https://github.com/volcengine/verl): well-established framework (torch, ray, sglang, FSDP).
 - Use verl's out-of-the-box functionality to implement, experiment, evaluate ideas.
 - Typical tasks: implement new ideas, debug runs/code, launch experiments, analyze results, lit search, find problems, propose new ideas, and the rest of a senior PhD student like tasks.
-- Usually, you're run on a GPU-equipped machine or from Amirhossein's M4 MacBook Pro which doesn't cuda; check using `nvidia-smi`.
+- Usually, you're run on a GPU-equipped machine or from Amirhossein's M4 MacBook Pro which doesn't have cuda; check using `nvidia-smi`.
 
 ## Mindset
 - Read first: always read docs + code before anything.
 - Docs: comprehensive coverage in `agent-docs/` and `docs/`.
 - `agent-docs/`: primary docs for codebase visibility; read before any coding/decision.
+- EXTREMELY IMPORTANT: MUST report what docs (agent-docs & official docs) & code files you read in your final answer; if you don't read any say so. If you don't follow this rule, Amirhossein will be very mad at you.
 - Doc gaps/conflicts with code: resolve yourself, then ask Amirhossein to verify and how to proceed.
 - Upstream: avoid touching verl codebase unless absolutely necessary to preserve sync-ability. Prefer subclassing and monkey patching instead of touching the verl codebase.
 - We refer to our modifications as "treetune", e.g. `verl_treetune` package path.
@@ -27,6 +28,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - **`ray-api-tutorial.md`**: How to write distributed code in verl—workers, data dispatch, GPU sharing patterns, and how verl uses Ray.
 - **`agent-loop.md`**: How trajectories are generated with tool calling and multi-turn interactions. Read when building tool-using agents.
 - **`config-system.md`**: How YAML configs work—inheritance, overrides, validation. Read when creating or debugging configs.
+- **`running-code.md`**: How to run verl based code—entrypoints (`main_ppo.py`, etc.), CLI patterns, local testing tips. Read when running or debugging implementation.
 - **`testing-guide.md`**: Testing practices, directory structure, CI workflows, utilities, and patterns. Read when writing or debugging tests.
 - **`official-docs-index.md`**: Index of verl's 82 official docs. Use as lookup when agent-docs don't cover your topic.
 
