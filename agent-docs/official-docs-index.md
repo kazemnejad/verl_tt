@@ -1,3 +1,11 @@
+---
+summary: Index of verl's 82 official docs with summaries and when-to-read hints. Use as lookup when agent-docs don't cover your topic.
+read_when:
+  - Agent-docs don't cover your topic
+  - Looking for specific verl feature docs
+  - Exploring available documentation
+---
+
 # verl Official Documentation Index
 
 > Last updated: 2026-01-26.

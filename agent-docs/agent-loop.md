@@ -1,3 +1,12 @@
+---
+summary: How trajectories are generated with tool calling and multi-turn interactions.
+read_when:
+  - Building tool-using agents
+  - Implementing multi-turn conversations
+  - Understanding agentic RL rollouts
+  - Debugging tool execution
+---
+
 # Agent Loop - Multi-Turn & Tool Use
 
 ## Overview

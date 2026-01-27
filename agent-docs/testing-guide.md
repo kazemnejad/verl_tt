@@ -1,3 +1,12 @@
+---
+summary: Testing practices, directory structure, CI workflows, utilities, and patterns.
+read_when:
+  - Writing or debugging tests
+  - Understanding test categories
+  - Setting up distributed tests
+  - Running E2E tests
+---
+
 # Testing in verl — Practices, Paradigms & Utilities
 
 ## Overview

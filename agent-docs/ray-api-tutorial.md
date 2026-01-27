@@ -1,3 +1,12 @@
+---
+summary: How to write distributed code in verl—workers, data dispatch, GPU sharing patterns, and how verl uses Ray.
+read_when:
+  - Implementing new workers
+  - Understanding dispatch decorators
+  - Debugging distributed issues
+  - GPU resource allocation and colocation
+---
+
 # verl Ray API - Single Controller Programming Guide
 
 ## Overview

@@ -1,3 +1,12 @@
+---
+summary: How the training loop runs step by step—data flow, when each computation happens, how to extend it.
+read_when:
+  - Understanding the training loop flow
+  - Debugging training issues
+  - Extending the trainer
+  - Implementing custom algorithms
+---
+
 # PPO Trainer - Design & Lifecycle
 
 ## Overview

@@ -1,3 +1,12 @@
+---
+summary: The worker that handles both training and generation—how it switches between modes and syncs weights.
+read_when:
+  - Understanding ActorRolloutRefWorker internals
+  - Debugging weight sync issues
+  - Working with hybrid training/inference mode
+  - Understanding rollout/inference engines
+---
+
 # ActorRolloutRefWorker - Design & Implementation
 
 ## Overview

@@ -1,3 +1,12 @@
+---
+summary: Big picture of how verl works—architecture, core abstractions, how components communicate, supported backends. The most important doc. Read first.
+read_when:
+  - Starting any verl-related work
+  - Understanding overall architecture
+  - Learning how components communicate
+  - Checking supported backends
+---
+
 # verl Framework - Architecture & Implementation Guide
 
 ## 1. Overview

@@ -1,3 +1,12 @@
+---
+summary: How YAML configs work—inheritance, overrides, validation via Hydra and dataclasses.
+read_when:
+  - Creating or modifying configs
+  - Debugging config issues
+  - Understanding Hydra defaults and inheritance
+  - Adding new config fields
+---
+
 # verl's Config System
 
 verl uses Hydra for hierarchical config composition and Python dataclasses for validation.
@@ -100,3 +109,6 @@ actor:
   #                    ^^^^^^^^^ fallback to false if path doesn't exist
 ```
 
+## Complete Config Reference
+
+For the complete config reference (all fields: data, actor_rollout_ref, critic, reward_model, algorithm, trainer), see `docs/examples/config.rst`.
