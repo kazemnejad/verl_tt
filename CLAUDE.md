@@ -30,6 +30,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - **`config-system.md`**: How YAML configs work—inheritance, overrides, validation. Read when creating or debugging configs.
 - **`running-code.md`**: How to run verl based code—entrypoints (`main_ppo.py`, etc.), CLI patterns, local testing tips. Read when running or debugging implementation.
 - **`testing-guide.md`**: Testing practices, directory structure, CI workflows, utilities, and patterns. Read when writing or debugging tests.
+- **`development-guide.md`**: How to develop on top of verl—upstream isolation, parallel directory layout, extension strategy (config injection > subclass > monkey-patch), recipe/test/script structure, checklists. Read before implementing anything.
 - **`official-docs-index.md`**: Index of verl's 82 official docs. Use as lookup when agent-docs don't cover your topic.
 
 ## General Protocol
