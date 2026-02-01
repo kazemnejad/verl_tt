@@ -15,6 +15,7 @@
 import copy
 import logging
 import os
+import sys
 from pathlib import Path
 
 from datasets import load_dataset
@@ -153,10 +154,13 @@ def _resolve_task_cls(task_config: DictConfig) -> type:
     custom_cls = task_config.get("custom_cls", None)
     if custom_cls is not None and custom_cls.get("path", None) is not None:
         cls_name = custom_cls.get("name", "Task")
-        # Use a stable module name derived from the file path so the module
-        # is registered in sys.modules (needed by inspect.getfile / cache key).
+        # Use a stable module name so the module is registered in sys.modules
+        # (needed by inspect.getfile / cache key). Reuse if already loaded.
         module_name = f"treetune_task_{hash(os.path.abspath(custom_cls.path))}"
-        mod = load_module(custom_cls.path, module_name=module_name)
+        if module_name in sys.modules:
+            mod = sys.modules[module_name]
+        else:
+            mod = load_module(custom_cls.path, module_name=module_name)
         return getattr(mod, cls_name)
     return Task
 

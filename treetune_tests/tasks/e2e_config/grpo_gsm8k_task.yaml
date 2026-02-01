@@ -1,0 +1,62 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+train_tasks:
+  - custom_cls:
+      path: "treetune_verl/tasks/gsm8k_task.py"
+      name: GSM8KTask
+    loading_params:
+      args: ["openai/gsm8k"]
+      kwargs:
+        name: main
+        split: train
+    prompt_template: '{question} Let''s think step by step and output the final answer after "####".'
+    data_source: "openai/gsm8k"
+
+val_tasks:
+  - custom_cls:
+      path: "treetune_verl/tasks/gsm8k_task.py"
+      name: GSM8KTask
+    loading_params:
+      args: ["openai/gsm8k"]
+      kwargs:
+        name: main
+        split: test
+    prompt_template: '{question} Let''s think step by step and output the final answer after "####".'
+    data_source: "openai/gsm8k"
+
+algorithm:
+  adv_estimator: grpo
+
+data:
+  train_batch_size: 64
+  max_prompt_length: 512
+  max_response_length: 256
+
+actor_rollout_ref:
+  model:
+    path: Qwen/Qwen2.5-0.5B-Instruct
+  actor:
+    optim:
+      lr: 1e-6
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size_per_gpu: 4
+  rollout:
+    name: sglang
+    log_prob_micro_batch_size_per_gpu: 8
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.4
+  ref:
+    log_prob_micro_batch_size_per_gpu: 4
+
+trainer:
+  logger: console
+  val_before_train: False
+  n_gpus_per_node: 1
+  nnodes: 1
+  total_training_steps: 2
