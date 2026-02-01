@@ -21,6 +21,7 @@ from datasets import load_dataset
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from treetune_verl.tasks.cache import compute_cache_key
+from verl.utils.import_utils import load_module
 
 logger = logging.getLogger(__name__)
 
@@ -133,3 +134,71 @@ class Task:
         ds.to_parquet(str(parquet_path))
         logger.info("Saved parquet: %s", parquet_path)
         return str(parquet_path)
+
+
+# ---------------------------------------------------------------------------
+# Module-level integration utilities
+# ---------------------------------------------------------------------------
+
+
+def _resolve_task_cls(task_config: DictConfig) -> type:
+    """Resolve a Task (sub)class from config.
+
+    If ``task_config.custom_cls.path`` is set, load the class using verl's
+    ``load_module``. Falls back to the base :class:`Task`.
+
+    The module is registered in ``sys.modules`` so that ``inspect.getfile``
+    works for cache-key hashing.
+    """
+    custom_cls = task_config.get("custom_cls", None)
+    if custom_cls is not None and custom_cls.get("path", None) is not None:
+        cls_name = custom_cls.get("name", "Task")
+        # Use a stable module name derived from the file path so the module
+        # is registered in sys.modules (needed by inspect.getfile / cache key).
+        module_name = f"treetune_task_{hash(os.path.abspath(custom_cls.path))}"
+        mod = load_module(custom_cls.path, module_name=module_name)
+        return getattr(mod, cls_name)
+    return Task
+
+
+def get_dataset_paths(
+    task_configs: list[DictConfig],
+    cache_dir: str | None = None,
+) -> list[str]:
+    """Build/cache parquet files for each task config.
+
+    Returns a list of absolute paths to ``.parquet`` files.
+    """
+    paths = []
+    for cfg in task_configs:
+        if not isinstance(cfg, DictConfig):
+            cfg = OmegaConf.create(cfg)
+        cls = _resolve_task_cls(cfg)
+        task = cls(cfg, cache_dir=cache_dir)
+        paths.append(task.get_parquet_path())
+    return paths
+
+
+def resolve_tasks_into_config(config: DictConfig, cache_dir: str | None = None):
+    """Resolve ``train_tasks`` / ``val_tasks`` into parquet file lists.
+
+    Patches ``config.data.train_files`` and ``config.data.val_files``
+    in-place. No other keys are touched.
+    """
+    train_tasks = config.get("train_tasks", None)
+    if train_tasks is not None:
+        paths = get_dataset_paths(list(train_tasks), cache_dir=cache_dir)
+        OmegaConf.update(config, "data.train_files", paths)
+
+    val_tasks = config.get("val_tasks", None)
+    if val_tasks is not None:
+        paths = get_dataset_paths(list(val_tasks), cache_dir=cache_dir)
+        OmegaConf.update(config, "data.val_files", paths)
+
+
+def run_with_tasks(config: DictConfig):
+    """Resolve tasks and delegate to verl's ``run_ppo``."""
+    resolve_tasks_into_config(config)
+    from verl.trainer.main_ppo import run_ppo
+
+    run_ppo(config)

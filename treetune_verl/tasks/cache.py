@@ -15,9 +15,25 @@
 import hashlib
 import inspect
 import pickle
+import sys
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
+
+
+def _get_source_file(cls: type) -> Path:
+    """Get the source file for *cls*, handling dynamically loaded modules."""
+    try:
+        return Path(inspect.getfile(cls))
+    except TypeError:
+        # Fallback: module loaded via importlib but not registered in sys.modules
+        mod = sys.modules.get(cls.__module__)
+        if mod is not None and hasattr(mod, "__file__") and mod.__file__:
+            return Path(mod.__file__)
+        # Last resort: walk spec origin
+        if mod is not None and hasattr(mod, "__spec__") and mod.__spec__ and mod.__spec__.origin:
+            return Path(mod.__spec__.origin)
+        raise
 
 
 def compute_cache_key(cls: type, config: dict | DictConfig) -> str:
@@ -34,7 +50,7 @@ def compute_cache_key(cls: type, config: dict | DictConfig) -> str:
         A string of the form ``"<impl_hash>_<config_hash>"``.
     """
     # Hash the source file bytes of the class
-    impl_hash = hashlib.sha256(Path(inspect.getfile(cls)).read_bytes()).hexdigest()[:12]
+    impl_hash = hashlib.sha256(_get_source_file(cls).read_bytes()).hexdigest()[:12]
 
     # Normalize OmegaConf to plain container before pickling
     if isinstance(config, DictConfig):

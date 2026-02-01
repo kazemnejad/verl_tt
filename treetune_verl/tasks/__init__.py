@@ -11,3 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from treetune_verl.tasks.task import (
+    Task,
+    get_dataset_paths,
+    resolve_tasks_into_config,
+    run_with_tasks,
+)
+
+__all__ = [
+    "Task",
+    "get_dataset_paths",
+    "resolve_tasks_into_config",
+    "run_with_tasks",
+]
