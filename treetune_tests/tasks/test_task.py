@@ -16,6 +16,7 @@ import os
 from unittest.mock import patch
 
 import datasets
+import pytest
 from omegaconf import OmegaConf
 
 from treetune_verl.tasks.task import Task
@@ -285,3 +286,39 @@ def test_get_parquet_path_respects_env_var(tmp_path, monkeypatch):
 
     assert env_cache in path
     assert os.path.exists(path)
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_prompt_format_raises():
+    """Unknown prompt_format raises ValueError."""
+    task = _make_task(
+        {
+            "loading_params": {"args": ["dummy"]},
+            "prompt_format": "invalid_mode",
+            "data_source": "test_ds",
+        }
+    )
+    map_fn = task._make_map_fn()
+    with pytest.raises(ValueError, match="Unknown prompt_format"):
+        map_fn({"question": "Q?"}, 0)
+
+
+def test_extra_fields_missing_column_skipped():
+    """Missing extra_field column is silently omitted from extra_info."""
+    task = _make_task(
+        {
+            "loading_params": {"args": ["dummy"]},
+            "prompt_template": "{question}",
+            "data_source": "test_ds",
+            "extra_fields": ["answer", "nonexistent"],
+        }
+    )
+    map_fn = task._make_map_fn()
+    row = {"question": "Q?", "answer": "A"}
+    result = map_fn(row, 0)
+    assert result["extra_info"]["answer"] == "A"
+    assert "nonexistent" not in result["extra_info"]

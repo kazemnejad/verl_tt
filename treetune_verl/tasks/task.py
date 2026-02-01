@@ -156,7 +156,10 @@ def _resolve_task_cls(task_config: DictConfig) -> type:
         cls_name = custom_cls.get("name", "Task")
         # Use a stable module name so the module is registered in sys.modules
         # (needed by inspect.getfile / cache key). Reuse if already loaded.
-        module_name = f"treetune_task_{hash(os.path.abspath(custom_cls.path))}"
+        import hashlib
+
+        path_hash = hashlib.sha256(os.path.abspath(custom_cls.path).encode()).hexdigest()[:16]
+        module_name = f"treetune_task_{path_hash}"
         if module_name in sys.modules:
             mod = sys.modules[module_name]
         else:

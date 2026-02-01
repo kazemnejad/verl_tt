@@ -121,6 +121,9 @@ def test_get_dataset_paths_with_custom_cls(tmp_path):
         paths = get_dataset_paths(configs, cache_dir=str(tmp_path))
     assert len(paths) == 1
     assert os.path.exists(paths[0])
+    # Verify the custom class was actually used (not the base Task)
+    resolved_cls = _resolve_task_cls(configs[0])
+    assert resolved_cls.__name__ == "MarkerTask"
 
 
 # ---------------------------------------------------------------------------

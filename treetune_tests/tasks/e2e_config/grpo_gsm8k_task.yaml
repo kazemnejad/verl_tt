@@ -47,6 +47,8 @@ actor_rollout_ref:
     ppo_mini_batch_size: 32
     ppo_micro_batch_size_per_gpu: 4
   rollout:
+    # Plan originally specified 'hf', but the hf rollout engine was removed
+    # upstream (not in _ROLLOUT_REGISTRY). Using sglang instead.
     name: sglang
     log_prob_micro_batch_size_per_gpu: 8
     tensor_model_parallel_size: 1
