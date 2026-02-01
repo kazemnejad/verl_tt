@@ -182,6 +182,19 @@ Single-purpose, standalone scripts not tied to a specific recipe or test. Exampl
 3. Add tests under `treetune_tests/`.
 4. Import from `treetune_verl` in recipes that need it.
 
+## Code Linting and Formatting
+
+Pre-commit hooks enforce style. Usage:
+```bash
+pre-commit run                # staged changes only
+pre-commit run --all-files    # entire repo
+# single hook:
+pre-commit run --all-files --show-diff-on-failure --color=always ruff
+pre-commit run --all-files --show-diff-on-failure --color=always autogen-trainer-cfg
+```
+
+Run before committing.
+
 ## Implementation Approach
 
 1. Study the docs, code, spec, implementation plan.

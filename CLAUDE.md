@@ -18,11 +18,13 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - EXTREMELY IMPORTANT: MUST report what docs (agent-docs & official docs) & code files you read in your final answer; if you don't read any say so. If you don't follow this rule, Amirhossein will be very mad at you.
 - Doc gaps/conflicts with code: resolve yourself, then ask Amirhossein to verify and how to proceed.
 - Upstream: avoid touching verl codebase unless absolutely necessary to preserve sync-ability. Prefer subclassing and monkey patching instead of touching the verl codebase.
-- We refer to our modifications as "treetune", e.g. `verl_treetune` package path.
+- We refer to our modifications as "treetune", e.g. `treetune_verl` package path.
+- Our spec directory: `treetune_specs/`
 - Must always keep the the next section "Agent-Docs (`agent-docs/`) index" up to date.
 
 ## Agent-Docs (`agent-docs/`) index
 - **`verl-framework-guide.md`**: Big picture of how verl works—architecture, core abstractions, how components communicate, supported backends. The most important doc. For anything verl related. Read first.
+- **`development-guide.md`**: How to develop on top of verl—upstream isolation, parallel directory layout, extension strategy (config injection > subclass > monkey-patch), recipe/test/script structure, checklists. Read before implementing anything.
 - **`ppo-trainer-lifecycle.md`**: How the training loop runs step by step—data flow, when each computation happens, how to extend it. This is the second most important doc; especially relevant to understanding the overal flow of the training loop.
 - **`actor-rollout-ref-worker.md`**: The worker that handles both training and generation—how it switches between modes and syncs weights. The visibility to verl's most commonly used internal component.
 - **`ray-api-tutorial.md`**: How to write distributed code in verl—workers, data dispatch, GPU sharing patterns, and how verl uses Ray.
@@ -30,7 +32,6 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - **`config-system.md`**: How YAML configs work—inheritance, overrides, validation. Read when creating or debugging configs.
 - **`running-code.md`**: How to run verl based code—entrypoints (`main_ppo.py`, etc.), CLI patterns, local testing tips. Read when running or debugging implementation.
 - **`testing-guide.md`**: Testing practices, directory structure, CI workflows, utilities, and patterns. Read when writing or debugging tests.
-- **`development-guide.md`**: How to develop on top of verl—upstream isolation, parallel directory layout, extension strategy (config injection > subclass > monkey-patch), recipe/test/script structure, checklists. Read before implementing anything.
 - **`official-docs-index.md`**: Index of verl's 82 official docs. Use as lookup when agent-docs don't cover your topic.
 
 ## General Protocol
