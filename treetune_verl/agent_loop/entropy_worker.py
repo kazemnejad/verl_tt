@@ -36,8 +36,47 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
+import types
+from unittest.mock import Mock
 
 import torch
+
+# SGLang's import chain (via async_sglang_server → sglang_rollout → weight_sync)
+# pulls in vllm. When this module is loaded in a CPU-only Ray worker, vllm is
+# not available. We install the same minimal mock as verl's _load_sglang()
+# so that pickle deserialization of EntropySGLangHttpServer handles succeeds.
+os.environ.setdefault("SGLANG_USE_CPU_ENGINE", "1")
+try:
+    import vllm  # noqa: F401
+except ImportError:
+    _mock_vllm = types.ModuleType("vllm")
+
+    _mock_custom_ops = types.ModuleType("vllm._custom_ops")
+    _mock_custom_ops.scaled_fp8_quant = Mock()
+    _mock_vllm._custom_ops = _mock_custom_ops
+
+    _mock_model_executor = types.ModuleType("vllm.model_executor")
+    _mock_layers = types.ModuleType("vllm.model_executor.layers")
+    _mock_activation = types.ModuleType("vllm.model_executor.layers.activation")
+
+    class _GeluAndMul:
+        pass
+
+    class _SiluAndMul:
+        pass
+
+    _mock_activation.GeluAndMul = _GeluAndMul
+    _mock_activation.SiluAndMul = _SiluAndMul
+    _mock_layers.activation = _mock_activation
+    _mock_model_executor.layers = _mock_layers
+    _mock_vllm.model_executor = _mock_model_executor
+
+    sys.modules.setdefault("vllm", _mock_vllm)
+    sys.modules.setdefault("vllm._custom_ops", _mock_custom_ops)
+    sys.modules.setdefault("vllm.model_executor", _mock_model_executor)
+    sys.modules.setdefault("vllm.model_executor.layers", _mock_layers)
+    sys.modules.setdefault("vllm.model_executor.layers.activation", _mock_activation)
 
 from verl.experimental.agent_loop.agent_loop import (
     AgentLoopWorker,
@@ -51,6 +90,15 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 class EntropyAgentLoopWorker(AgentLoopWorker):
     """AgentLoopWorker subclass that batches per-token entropy into DataProto."""
+
+    def __init__(self, *args, **kwargs):
+        # Import entropy agent loops to trigger @register() in worker process.
+        # Ray actors start fresh processes — without these imports, names like
+        # "entropy_single_turn_agent" won't be in the _agent_loop_registry.
+        import treetune_verl.agent_loop.entropy_single_turn_agent_loop  # noqa: F401
+        import treetune_verl.agent_loop.entropy_tool_agent_loop  # noqa: F401
+
+        super().__init__(*args, **kwargs)
 
     async def _agent_loop_postprocess(self, output, **kwargs) -> _InternalAgentLoopOutput:
         """Convert entropy list to padded tensor after parent post-processing."""
