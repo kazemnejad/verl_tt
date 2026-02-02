@@ -103,7 +103,10 @@ def _apply_subprocess_patches() -> None:
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             _top_k_env = os.environ.get("TREETUNE_ENTROPY_TOP_K")
-            self.entropy_top_k: int | None = int(_top_k_env) if _top_k_env is not None else None
+            # 0 or unset → None (full-vocab); positive int → top-k
+            self.entropy_top_k: int | None = int(_top_k_env) if _top_k_env else None
+            if self.entropy_top_k is not None and self.entropy_top_k <= 0:
+                self.entropy_top_k = None
 
         def forward(
             self,
@@ -114,8 +117,9 @@ def _apply_subprocess_patches() -> None:
             token_ids_logprobs,
             positions,
         ):
-            entropy = compute_entropy(logits_output.next_token_logits, top_k=self.entropy_top_k)
-            logits_output.next_token_entropy = entropy
+            if logits_output.next_token_logits is not None:
+                entropy = compute_entropy(logits_output.next_token_logits, top_k=self.entropy_top_k)
+                logits_output.next_token_entropy = entropy
             return super().forward(
                 logits_output,
                 sampling_info,
@@ -127,13 +131,20 @@ def _apply_subprocess_patches() -> None:
 
     sampler_mod.Sampler = EntropySampler
 
+    # Also patch the already-imported reference in model_runner so that
+    # ``ModelRunner.__init__`` instantiates our ``EntropySampler``.
+    import sglang.srt.model_executor.model_runner as model_runner_mod
+
+    model_runner_mod.Sampler = EntropySampler
+
     # ---- Patch 2: process_batch_result_decode --------------------------------
     from sglang.srt.managers.scheduler import Scheduler
 
     _orig_process = Scheduler.process_batch_result_decode
 
     def _patched_process(self, batch, result):
-        _orig_process(self, batch, result)
+        # Store entropy BEFORE calling the original, because the original
+        # calls stream_output which drains the store.
         logits_output = result.logits_output
         if (
             logits_output is not None
@@ -142,8 +153,31 @@ def _apply_subprocess_patches() -> None:
         ):
             for i, req in enumerate(batch.reqs):
                 _entropy_store.append(req.rid, logits_output.next_token_entropy[i].item())
+        _orig_process(self, batch, result)
 
     Scheduler.process_batch_result_decode = _patched_process
+
+    # ---- Patch 2b: process_batch_result_prefill (first generated token) ------
+    _orig_process_prefill = Scheduler.process_batch_result_prefill
+
+    def _patched_process_prefill(self, batch, result):
+        # Store entropy BEFORE calling the original, because the original
+        # calls stream_output which drains the store.
+        if self.is_generation:
+            logits_output = result.logits_output
+            if (
+                logits_output is not None
+                and hasattr(logits_output, "next_token_entropy")
+                and logits_output.next_token_entropy is not None
+            ):
+                for i, req in enumerate(batch.reqs):
+                    if req.finished() or req.is_retracted:
+                        continue
+                    if getattr(req, "is_chunked", 0) <= 0:
+                        _entropy_store.append(req.rid, logits_output.next_token_entropy[i].item())
+        _orig_process_prefill(self, batch, result)
+
+    Scheduler.process_batch_result_prefill = _patched_process_prefill
 
     # ---- Patch 3: intercept send_to_detokenizer via Scheduler.__init__ -------
     _orig_init = Scheduler.__init__
@@ -181,13 +215,18 @@ def _apply_subprocess_patches() -> None:
 def apply_parent_patches():
     """Apply parent-process patches to TokenizerManager for entropy propagation.
 
-    Patches:
-    4a. convert_logprob_style — accumulate entropy from recv_obj into state
-    4b. add_logprob_to_meta_info — inject entropy into meta_info dict
+    Patches convert_logprob_style to accumulate entropy from recv_obj into
+    state and inject it directly into meta_info.
     """
     from sglang.srt.managers.tokenizer_manager import TokenizerManager
 
-    # Patch 4a: convert_logprob_style
+    # Patch 4: convert_logprob_style — accumulate entropy from recv_obj
+    # and inject directly into meta_info.
+    #
+    # Why not use add_logprob_to_meta_info?  Because the original
+    # convert_logprob_style calls add_logprob_to_meta_info internally
+    # *before* we get a chance to accumulate entropy into state.  So we
+    # inject entropy into meta_info right here after the original call.
     _orig_convert = TokenizerManager.convert_logprob_style
 
     def _patched_convert(
@@ -211,20 +250,12 @@ def apply_parent_patches():
                 if not hasattr(state, "output_token_entropy_val"):
                     state.output_token_entropy_val = []
                 state.output_token_entropy_val.extend(per_req)
+                # Inject directly into meta_info (add_logprob_to_meta_info
+                # has already been called by _orig_convert, so we must do
+                # this ourselves).
+                meta_info["output_token_entropy"] = list(state.output_token_entropy_val)
 
     TokenizerManager.convert_logprob_style = _patched_convert
-
-    # Patch 4b: add_logprob_to_meta_info
-    _orig_add = TokenizerManager.add_logprob_to_meta_info
-
-    def _patched_add(self, meta_info, state, top_logprobs_num, token_ids_logprob, return_text_in_logprobs):
-        _orig_add(self, meta_info, state, top_logprobs_num, token_ids_logprob, return_text_in_logprobs)
-
-        entropy = getattr(state, "output_token_entropy_val", None)
-        if entropy:
-            meta_info["output_token_entropy"] = list(entropy)
-
-    TokenizerManager.add_logprob_to_meta_info = _patched_add
 
 
 # ---------------------------------------------------------------------------
