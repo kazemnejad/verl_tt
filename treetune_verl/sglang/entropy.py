@@ -174,6 +174,60 @@ def _apply_subprocess_patches() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Parent-process monkey-patches (TokenizerManager)
+# ---------------------------------------------------------------------------
+
+
+def apply_parent_patches():
+    """Apply parent-process patches to TokenizerManager for entropy propagation.
+
+    Patches:
+    4a. convert_logprob_style — accumulate entropy from recv_obj into state
+    4b. add_logprob_to_meta_info — inject entropy into meta_info dict
+    """
+    from sglang.srt.managers.tokenizer_manager import TokenizerManager
+
+    # Patch 4a: convert_logprob_style
+    _orig_convert = TokenizerManager.convert_logprob_style
+
+    def _patched_convert(
+        self, meta_info, state, top_logprobs_num, token_ids_logprob, return_text_in_logprobs, recv_obj, recv_obj_index
+    ):
+        _orig_convert(
+            self,
+            meta_info,
+            state,
+            top_logprobs_num,
+            token_ids_logprob,
+            return_text_in_logprobs,
+            recv_obj,
+            recv_obj_index,
+        )
+
+        entropy_vals = getattr(recv_obj, "output_token_entropy_val", None)
+        if entropy_vals is not None:
+            per_req = entropy_vals[recv_obj_index] if isinstance(entropy_vals[recv_obj_index], list) else []
+            if per_req:
+                if not hasattr(state, "output_token_entropy_val"):
+                    state.output_token_entropy_val = []
+                state.output_token_entropy_val.extend(per_req)
+
+    TokenizerManager.convert_logprob_style = _patched_convert
+
+    # Patch 4b: add_logprob_to_meta_info
+    _orig_add = TokenizerManager.add_logprob_to_meta_info
+
+    def _patched_add(self, meta_info, state, top_logprobs_num, token_ids_logprob, return_text_in_logprobs):
+        _orig_add(self, meta_info, state, top_logprobs_num, token_ids_logprob, return_text_in_logprobs)
+
+        entropy = getattr(state, "output_token_entropy_val", None)
+        if entropy:
+            meta_info["output_token_entropy"] = list(entropy)
+
+    TokenizerManager.add_logprob_to_meta_info = _patched_add
+
+
+# ---------------------------------------------------------------------------
 # Custom scheduler entry-point (must be top-level for spawn/pickle)
 # ---------------------------------------------------------------------------
 
