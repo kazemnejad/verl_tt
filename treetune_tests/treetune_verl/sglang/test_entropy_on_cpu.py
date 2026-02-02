@@ -16,7 +16,7 @@ import math
 
 import torch
 
-from treetune_verl.sglang.entropy import compute_entropy
+from treetune_verl.sglang.entropy import EntropyStore, compute_entropy
 
 
 class TestComputeEntropy:
@@ -67,3 +67,48 @@ class TestComputeEntropy:
         logits = torch.randn(5, 50)
         result = compute_entropy(logits, top_k=10)
         assert (result <= math.log(10) + 1e-5).all()
+
+
+class TestEntropyStore:
+    def test_append_and_get(self):
+        """Append two values, get_since_offset returns both."""
+        store = EntropyStore()
+        store.append("r1", 0.5)
+        store.append("r1", 0.7)
+        assert store.get_since_offset("r1") == [0.5, 0.7]
+
+    def test_offset_tracking(self):
+        """Offset advances after each get_since_offset call."""
+        store = EntropyStore()
+        store.append("r1", 1.0)
+        store.append("r1", 2.0)
+        store.append("r1", 3.0)
+
+        assert store.get_since_offset("r1") == [1.0, 2.0, 3.0]
+        assert store.get_since_offset("r1") == []
+
+        store.append("r1", 4.0)
+        store.append("r1", 5.0)
+        assert store.get_since_offset("r1") == [4.0, 5.0]
+
+    def test_cleanup(self):
+        """Cleanup removes rid; subsequent get returns empty."""
+        store = EntropyStore()
+        store.append("r1", 0.5)
+        store.cleanup("r1")
+        assert store.get_since_offset("r1") == []
+
+    def test_missing_rid(self):
+        """get_since_offset for unknown rid returns empty list."""
+        store = EntropyStore()
+        assert store.get_since_offset("nonexistent") == []
+
+    def test_multiple_rids(self):
+        """Different rids are fully isolated."""
+        store = EntropyStore()
+        store.append("r1", 0.1)
+        store.append("r1", 0.2)
+        store.append("r2", 0.9)
+
+        assert store.get_since_offset("r1") == [0.1, 0.2]
+        assert store.get_since_offset("r2") == [0.9]

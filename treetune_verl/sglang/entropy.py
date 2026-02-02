@@ -43,3 +43,26 @@ def compute_entropy(logits: torch.Tensor, top_k: Optional[int] = None) -> torch.
         else:
             log_probs = F.log_softmax(logits, dim=-1)
         return -(torch.exp(log_probs) * log_probs).sum(dim=-1)
+
+
+class EntropyStore:
+    """Per-request entropy accumulation with offset tracking."""
+
+    def __init__(self):
+        self._store: dict[str, dict] = {}
+
+    def append(self, rid: str, value: float) -> None:
+        if rid not in self._store:
+            self._store[rid] = {"vals": [], "offset": 0}
+        self._store[rid]["vals"].append(value)
+
+    def get_since_offset(self, rid: str) -> list[float]:
+        entry = self._store.get(rid)
+        if entry is None:
+            return []
+        result = entry["vals"][entry["offset"] :]
+        entry["offset"] = len(entry["vals"])
+        return result
+
+    def cleanup(self, rid: str) -> None:
+        self._store.pop(rid, None)
