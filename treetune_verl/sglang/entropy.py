@@ -16,3 +16,30 @@
 
 Spec: treetune_specs/2026-02-02-sglang-entropy-extraction.md
 """
+
+from typing import Optional
+
+import torch
+import torch.nn.functional as F
+
+
+def compute_entropy(logits: torch.Tensor, top_k: Optional[int] = None) -> torch.Tensor:
+    """Compute per-row entropy from logits.
+
+    Args:
+        logits: Raw logits tensor of shape ``(..., vocab_size)``.
+        top_k: If *None*, compute full-vocab entropy.  If a positive int,
+            take the *k* largest logits per row, renormalize via softmax,
+            and compute entropy over those *k* values.
+
+    Returns:
+        Entropy tensor of shape ``(...)``, i.e. the last dimension is
+        reduced.
+    """
+    with torch.no_grad():
+        if top_k is not None:
+            values, _ = torch.topk(logits, top_k, dim=-1)
+            log_probs = F.log_softmax(values, dim=-1)
+        else:
+            log_probs = F.log_softmax(logits, dim=-1)
+        return -(torch.exp(log_probs) * log_probs).sum(dim=-1)
