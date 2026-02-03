@@ -156,8 +156,10 @@ def _apply_subprocess_patches() -> None:
             and hasattr(logits_output, "next_token_entropy")
             and logits_output.next_token_entropy is not None
         ):
+            # Batch extract to CPU once to avoid per-element GPU sync
+            entropy_cpu = logits_output.next_token_entropy.tolist()
             for i, req in enumerate(batch.reqs):
-                _entropy_store.append(req.rid, logits_output.next_token_entropy[i].item())
+                _entropy_store.append(req.rid, entropy_cpu[i])
         _orig_process(self, batch, result)
 
     Scheduler.process_batch_result_decode = _patched_process
@@ -175,11 +177,13 @@ def _apply_subprocess_patches() -> None:
                 and hasattr(logits_output, "next_token_entropy")
                 and logits_output.next_token_entropy is not None
             ):
+                # Batch extract to CPU once to avoid per-element GPU sync
+                entropy_cpu = logits_output.next_token_entropy.tolist()
                 for i, req in enumerate(batch.reqs):
                     if req.finished() or req.is_retracted:
                         continue
                     if getattr(req, "is_chunked", 0) <= 0:
-                        _entropy_store.append(req.rid, logits_output.next_token_entropy[i].item())
+                        _entropy_store.append(req.rid, entropy_cpu[i])
         _orig_process_prefill(self, batch, result)
 
     Scheduler.process_batch_result_prefill = _patched_process_prefill
