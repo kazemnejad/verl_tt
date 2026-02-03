@@ -78,6 +78,20 @@ class TestEntropySmoke:
         logprobs = output["meta_info"]["output_token_logprobs"]
         assert len(entropy) == len(logprobs), f"entropy len {len(entropy)} != logprobs len {len(logprobs)}"
 
+    def test_entropy_length_matches_output_ids(self, engine):
+        """Entropy list length must equal output_ids length (one entropy per sampled token)."""
+        output = engine.generate(
+            prompt="Write a haiku:",
+            sampling_params={"max_new_tokens": 48, "temperature": 0.7},
+            return_logprob=True,
+        )
+        entropy = output["meta_info"]["output_token_entropy"]
+        output_ids = output["output_ids"]
+        assert len(entropy) == len(output_ids), (
+            f"entropy len {len(entropy)} != output_ids len {len(output_ids)}; "
+            f"each entropy should correspond to one sampled token"
+        )
+
     def test_entropy_non_negative(self, engine):
         """All per-token entropy values must be >= 0."""
         output = engine.generate(
