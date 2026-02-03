@@ -119,7 +119,11 @@ def _apply_subprocess_patches() -> None:
             positions,
         ):
             if logits_output.next_token_logits is not None:
-                entropy = compute_entropy(logits_output.next_token_logits, top_k=self.entropy_top_k)
+                logits = logits_output.next_token_logits
+                # Match parent Sampler._preprocess_logits NaN handling
+                if torch.any(torch.isnan(logits)):
+                    logits = torch.where(torch.isnan(logits), torch.full_like(logits, -1e5), logits)
+                entropy = compute_entropy(logits, top_k=self.entropy_top_k)
                 logits_output.next_token_entropy = entropy
             return super().forward(
                 logits_output,
