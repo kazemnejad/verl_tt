@@ -32,6 +32,8 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - **`config-system.md`**: How YAML configs work—inheritance, overrides, validation. Read when creating or debugging configs.
 - **`running-code.md`**: How to run verl based code—entrypoints (`main_ppo.py`, etc.), CLI patterns, local testing tips. Read when running or debugging implementation.
 - **`testing-guide.md`**: Testing practices, directory structure, CI workflows, utilities, and patterns. Read when writing or debugging tests.
+- **`sglang-engine-guide.md`**: How sglang's inference engine (SRT) works—process architecture, request lifecycle, scheduling, KV cache, RadixAttention, model execution, sampling, and verl integration. Read when debugging inference, rollout, or weight sync issues.
+- **`sync-warnings.md`**: Catalog of every sync-sensitive site across the codebase (copied/monkey-patched upstream methods). Per-feature sections with upgrade checklists for verl and sglang. Read when upgrading dependencies or adding new monkey-patches.
 - **`official-docs-index.md`**: Index of verl's 82 official docs. Use as lookup when agent-docs don't cover your topic.
 
 ## General Protocol
