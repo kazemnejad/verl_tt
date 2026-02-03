@@ -49,6 +49,7 @@ class EntropySGLangHttpServer(SGLangHttpServer):
 
         await super().launch_server(master_address, master_port)
 
+    # SYNC WARNING: async_sglang_server.py:SGLangHttpServer.generate() — see agent-docs/sync-warnings.md
     async def generate(
         self,
         prompt_ids: torch.Tensor,

@@ -46,6 +46,7 @@ class EntropyToolAgentLoop(ToolAgentLoop):
 
     # ------------------------------------------------------------------
     # run() — full reimplementation to init response_entropy and emit it
+    # SYNC WARNING: tool_agent_loop.py:ToolAgentLoop.run() — see agent-docs/sync-warnings.md
     # ------------------------------------------------------------------
 
     @rollout_trace_op
@@ -136,6 +137,7 @@ class EntropyToolAgentLoop(ToolAgentLoop):
 
     # ------------------------------------------------------------------
     # _handle_generating_state — full reimplementation to access output
+    # SYNC WARNING: tool_agent_loop.py:ToolAgentLoop._handle_generating_state() — see agent-docs/sync-warnings.md
     # ------------------------------------------------------------------
 
     async def _handle_generating_state(

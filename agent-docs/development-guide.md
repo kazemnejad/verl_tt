@@ -159,6 +159,10 @@ Follows `agent-docs/testing-guide.md` and `tests/README.md` strictly.
 - Use pytest fixtures for Ray init/shutdown, distributed setup.
 - Use `torch.testing.assert_close()` for tensor comparisons.
 - E2E tests: shell scripts with `set -xeuo pipefail`.
+- **PYTHONPATH in scripts**: `python3 <script>` sets `sys.path[0]` to the script's directory, not `cwd`. E2E and standalone scripts must export the project root so `treetune_verl` / `treetune_recipe` are importable:
+  ```bash
+  export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}$(pwd)"
+  ```
 
 ## `treetune_scripts/` — Utility Scripts
 
@@ -194,6 +198,29 @@ pre-commit run --all-files --show-diff-on-failure --color=always autogen-trainer
 ```
 
 Run before committing.
+
+## License Headers
+
+Every `.py` file must contain a recognized license header — enforced by the `check-license` pre-commit hook (`tests/special_sanity/check_license.py`). Commits will fail without one.
+
+For our (treetune) code, use:
+```python
+# Copyright 2025 Individual Contributor: Amirhossein Kazemnejad
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+```
+
+Other recognized headers (upstream): Bytedance, PRIME, SGLang, ModelBest, Amazon, Facebook, Meituan, Huawei. See `check_license.py` for the full list.
 
 ## Implementation Approach
 

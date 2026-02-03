@@ -35,6 +35,7 @@ logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 class EntropySingleTurnAgentLoop(SingleTurnAgentLoop):
     """Single-turn agent loop with per-token entropy extraction."""
 
+    # SYNC WARNING: single_turn_agent_loop.py:SingleTurnAgentLoop.run() — see agent-docs/sync-warnings.md
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
         messages = list(kwargs["raw_prompt"])
 

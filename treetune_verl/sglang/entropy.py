@@ -83,6 +83,7 @@ _entropy_store = EntropyStore()
 # ---------------------------------------------------------------------------
 
 
+# SYNC WARNING: sglang 0.5.6.post2 internals (Sampler, Scheduler, SenderWrapper) — see agent-docs/sync-warnings.md
 def _apply_subprocess_patches() -> None:
     """Patch sglang internals to compute/propagate per-token entropy.
 
@@ -212,6 +213,7 @@ def _apply_subprocess_patches() -> None:
 # ---------------------------------------------------------------------------
 
 
+# SYNC WARNING: sglang 0.5.6.post2 TokenizerManager.convert_logprob_style — see agent-docs/sync-warnings.md
 def apply_parent_patches():
     """Apply parent-process patches to TokenizerManager for entropy propagation.
 
@@ -263,6 +265,7 @@ def apply_parent_patches():
 # ---------------------------------------------------------------------------
 
 
+# SYNC WARNING: sglang scheduler.py:run_scheduler_process() signature — see agent-docs/sync-warnings.md
 def custom_run_scheduler_process(
     server_args,
     port_args,
