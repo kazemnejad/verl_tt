@@ -20,6 +20,7 @@ nnodes: 1
 model:
   path: ???  # Required: model path
   trust_remote_code: true
+  dtype: bfloat16
 
 # === Rollout (imported from verl, override what we need) ===
 rollout:
