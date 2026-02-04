@@ -35,7 +35,8 @@ import json
 import pickle
 from typing import TYPE_CHECKING
 
-from omegaconf import DictConfig, OmegaConf
+import pandas as pd
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 if TYPE_CHECKING:
     from verl.protocol import DataProto
@@ -293,3 +294,49 @@ class GenerationRunner:
         trajectories_path = self.output_dir / "trajectories.pkl"
         with open(trajectories_path, "wb") as f:
             pickle.dump(all_items, f)
+
+    # =========================================================================
+    # Data Loading
+    # =========================================================================
+
+    def _load_data(self) -> None:
+        """Load parquet files and store as DataFrame.
+
+        Handles two modes:
+        1. Direct files: Uses config.data.files paths directly
+        2. Task system: If config.tasks is set, resolves via get_dataset_paths()
+
+        Sets instance variables:
+        - self.dataframe: pandas DataFrame with loaded data
+        - self.prompt_key: column name for prompts (from config.data.prompt_key)
+        - self.total_samples: number of samples (after max_samples limit)
+        """
+        # Determine file paths - task system or direct
+        if self.config.tasks is not None:
+            # Resolve tasks to parquet file paths
+            from treetune_verl.tasks import get_dataset_paths
+
+            task_list = list(self.config.tasks)
+            files = get_dataset_paths(task_list)
+        else:
+            # Use files directly from config
+            files = self.config.data.files
+            if not isinstance(files, list | ListConfig):
+                files = [files]
+
+        # Load and concatenate all parquet files
+        dataframes = []
+        for filepath in files:
+            df = pd.read_parquet(filepath)
+            dataframes.append(df)
+
+        self.dataframe = pd.concat(dataframes, axis=0, ignore_index=True)
+
+        # Apply max_samples limit if set
+        max_samples = self.config.data.get("max_samples", None)
+        if max_samples is not None:
+            self.dataframe = self.dataframe.head(max_samples)
+
+        # Set instance variables
+        self.prompt_key = self.config.data.prompt_key
+        self.total_samples = len(self.dataframe)
