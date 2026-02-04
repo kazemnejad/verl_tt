@@ -31,6 +31,9 @@ Does NOT handle:
 
 from __future__ import annotations
 
+import json
+import pickle
+
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -106,3 +109,90 @@ class GenerationRunner:
         )
 
         return adapted
+
+    # =========================================================================
+    # Checkpoint Methods
+    # =========================================================================
+
+    def _save_checkpoint(self) -> None:
+        """Write checkpoint state to output_dir/checkpoint.json.
+
+        Checkpoint contains:
+        - completed_indices: List of sample indices that have been saved
+        - saved_batches: List of batch file names (without .pkl extension)
+        - total_samples: Total samples in dataset
+        - config_snapshot: Generation config for validation on resume
+
+        The completed_indices are sorted for deterministic output.
+        """
+        checkpoint_data = {
+            "completed_indices": sorted(self.completed_indices),
+            "saved_batches": self.saved_batches,
+            "total_samples": self.total_samples,
+            "config_snapshot": self.config_snapshot,
+        }
+
+        checkpoint_path = self.output_dir / "checkpoint.json"
+        with open(checkpoint_path, "w") as f:
+            json.dump(checkpoint_data, f, indent=2)
+
+    def _load_checkpoint(self) -> bool:
+        """Load checkpoint state if file exists.
+
+        Returns:
+            True if checkpoint was loaded, False if no checkpoint exists.
+
+        On successful load, restores:
+        - self.completed_indices (as set)
+        - self.saved_batches
+        """
+        checkpoint_path = self.output_dir / "checkpoint.json"
+
+        if not checkpoint_path.exists():
+            return False
+
+        with open(checkpoint_path) as f:
+            data = json.load(f)
+
+        self.completed_indices = set(data["completed_indices"])
+        self.saved_batches = data["saved_batches"]
+        # Note: total_samples from checkpoint can be used for validation
+        # but we don't overwrite self.total_samples as it should come from dataset
+
+        return True
+
+    def _get_pending_indices(self) -> list[int]:
+        """Return indices not yet completed.
+
+        Returns:
+            List of indices from 0 to total_samples-1 that are not in
+            completed_indices, in ascending order.
+        """
+        return [i for i in range(self.total_samples) if i not in self.completed_indices]
+
+    def _validate_batches(self) -> tuple[list[str], list[str]]:
+        """Validate that all saved batch files exist and are readable.
+
+        Returns:
+            Tuple of (missing_batches, corrupt_batches) where:
+            - missing_batches: batch names where .pkl file doesn't exist
+            - corrupt_batches: batch names where .pkl file exists but can't be loaded
+        """
+        missing: list[str] = []
+        corrupt: list[str] = []
+
+        for batch_name in self.saved_batches:
+            batch_path = self.output_dir / f"{batch_name}.pkl"
+
+            if not batch_path.exists():
+                missing.append(batch_name)
+                continue
+
+            # Try to load to verify it's not corrupt
+            try:
+                with open(batch_path, "rb") as f:
+                    pickle.load(f)
+            except (pickle.UnpicklingError, EOFError, Exception):
+                corrupt.append(batch_name)
+
+        return missing, corrupt
