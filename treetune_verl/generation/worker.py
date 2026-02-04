@@ -26,6 +26,8 @@ Usage:
     )
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 import ray
@@ -87,7 +89,7 @@ class CollectorAgentLoopWorker(AgentLoopWorker):
         *,
         agent_name: str,
         trace: bool = True,
-        index: int = None,
+        index: int | None = None,
         **kwargs,
     ):
         """Run agent loop and push result to queue when complete.
