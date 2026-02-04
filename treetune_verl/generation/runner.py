@@ -109,26 +109,54 @@ class GenerationRunner:
 
         Returns:
             Nested config with trainer, actor_rollout_ref, reward_model structure.
+
+        Note:
+            The rollout and model configs need _target_ fields for proper
+            dataclass conversion via omega_conf_to_dataclass when passed
+            through Ray actors.
         """
-        # Keep as DictConfig to preserve attribute access
+        # Convert to containers first to avoid OmegaConf reference issues
+        rollout_dict = OmegaConf.to_container(config.rollout, resolve=True)
+        model_dict = OmegaConf.to_container(config.model, resolve=True)
+        data_dict = OmegaConf.to_container(config.data, resolve=True)
+
+        # Add _target_ for hydra instantiation if not present
+        if "_target_" not in rollout_dict:
+            rollout_dict["_target_"] = "verl.workers.config.RolloutConfig"
+
+        # Ensure mtp config has proper defaults (required by SGLang server)
+        if "mtp" not in rollout_dict or rollout_dict["mtp"] is None:
+            rollout_dict["mtp"] = {
+                "_target_": "verl.workers.config.MtpConfig",
+                "enable": False,
+                "enable_rollout": False,
+            }
+        elif isinstance(rollout_dict["mtp"], dict) and "_target_" not in rollout_dict["mtp"]:
+            rollout_dict["mtp"]["_target_"] = "verl.workers.config.MtpConfig"
+
+        # Add _target_ to model config if not present
+        if "_target_" not in model_dict:
+            model_dict["_target_"] = "verl.workers.config.HFModelConfig"
+
+        # Create the adapted config structure
         return OmegaConf.create(
             {
-                "trainer": OmegaConf.create(
-                    {
-                        "n_gpus_per_node": config.n_gpus_per_node,
-                        "nnodes": config.nnodes,
-                        "project_name": config.get("project_name", "generation"),
-                        "experiment_name": config.get("experiment_name", "run"),
-                    }
-                ),
-                "actor_rollout_ref": OmegaConf.create(
-                    {
-                        "model": config.model,
-                        "rollout": config.rollout,
-                    }
-                ),
-                "reward_model": OmegaConf.create({"enable": False}),
-                "data": config.data,
+                "trainer": {
+                    "n_gpus_per_node": config.n_gpus_per_node,
+                    "nnodes": config.nnodes,
+                    "project_name": config.get("project_name", "generation"),
+                    "experiment_name": config.get("experiment_name", "run"),
+                },
+                "actor_rollout_ref": {
+                    "model": model_dict,
+                    "rollout": rollout_dict,
+                },
+                "reward_model": {
+                    "enable": False,
+                    "use_reward_loop": False,
+                    "enable_resource_pool": False,
+                },
+                "data": data_dict,
             }
         )
 

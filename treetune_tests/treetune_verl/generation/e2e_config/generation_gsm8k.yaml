@@ -48,8 +48,9 @@ rollout:
 # === Data (use tasks to load GSM8K) ===
 data:
   files: null  # Will be set by tasks
-  prompt_key: raw_prompt
-  max_samples: 5  # Small subset for smoke test
+  prompt_key: prompt  # Task system creates 'prompt' column
+  max_samples: 4  # Small subset for smoke test (must be divisible by num_workers)
+  tool_config_path: null  # No tools for basic generation test
 
 # === Task System ===
 tasks:
