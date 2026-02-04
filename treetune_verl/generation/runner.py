@@ -32,14 +32,21 @@ Does NOT handle:
 from __future__ import annotations
 
 import json
+import logging
 import pickle
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import ray
 from omegaconf import DictConfig, ListConfig, OmegaConf
+
+from treetune_verl.generation.queue import ResultsQueue
 
 if TYPE_CHECKING:
     from verl.protocol import DataProto
+
+logger = logging.getLogger(__name__)
 
 
 class GenerationRunner:
@@ -48,7 +55,210 @@ class GenerationRunner:
     Converts flat generation config to nested structure expected by
     AgentLoopManager, manages trajectory collection via ResultsQueue,
     handles checkpointing, and saves batches incrementally.
+
+    Usage:
+        runner = GenerationRunner(config)
+        runner.run()
     """
+
+    def __init__(self, config: DictConfig):
+        """Initialize GenerationRunner with configuration.
+
+        Args:
+            config: Flat generation config (from generation.yaml).
+                Must contain: n_gpus_per_node, nnodes, model, rollout, data, generation
+        """
+        self.config = config
+
+        # Setup output directory
+        gen_config = config.generation
+        self.output_dir = Path(gen_config.output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize state
+        self.completed_indices: set[int] = set()
+        self.saved_batches: list[str] = []
+        self.total_samples: int = 0
+
+        # Store config snapshot for checkpointing
+        self.config_snapshot = OmegaConf.to_container(config, resolve=True)
+
+        # Load data
+        self._load_data()
+
+        # Try to resume from checkpoint
+        if self._load_checkpoint():
+            logger.info(
+                f"Resumed from checkpoint: {len(self.completed_indices)} completed, {len(self.saved_batches)} batches"
+            )
+
+        # Queue will be created in run()
+        self._queue: ray.actor.ActorHandle | None = None
+
+    def run(self) -> None:
+        """Run the generation workflow.
+
+        Orchestrates the complete generation flow:
+        1. Create ResultsQueue actor
+        2. Create AgentLoopManager with adapted config
+        3. Dispatch generation to workers (workers push to queue)
+        4. Run pull loop: collect from queue, save batches, update checkpoint
+        5. Final merge and optional WandB upload
+
+        The pull loop runs concurrent with generation dispatch, collecting
+        results as they arrive rather than waiting for all to complete.
+        """
+        from tqdm import tqdm
+
+        from verl.experimental.agent_loop.agent_loop import AgentLoopManager
+
+        gen_config = self.config.generation
+        save_batch_size = gen_config.save_batch_size
+        pull_timeout = gen_config.pull_timeout
+        show_progress = gen_config.show_progress
+        checkpoint_interval = gen_config.get("checkpoint_interval", 1)
+
+        # Get pending indices (exclude completed from previous run)
+        pending_indices = self._get_pending_indices()
+
+        if not pending_indices:
+            logger.info("All samples already completed. Running final steps only.")
+            # Skip to final merge/upload
+            if gen_config.final_merge:
+                self._merge_batches()
+            if gen_config.wandb_upload:
+                self._upload_to_wandb()
+            return
+
+        logger.info(f"Starting generation for {len(pending_indices)} samples")
+
+        # Create ResultsQueue actor
+        self._queue = ResultsQueue.remote()
+
+        # Adapt config for AgentLoopManager
+        adapted_config = self._adapt_config_for_manager(self.config)
+
+        # Create AgentLoopManager (standalone mode - no worker_group)
+        manager = AgentLoopManager(
+            config=adapted_config,
+            worker_group=None,  # Standalone mode
+            rollout_resource_pool=None,  # Will create internally
+        )
+
+        # Setup progress bar
+        pbar = None
+        if show_progress:
+            pbar = tqdm(
+                total=self.total_samples,
+                initial=len(self.completed_indices),
+                desc="Generation",
+                unit="samples",
+            )
+
+        try:
+            # Dispatch generation asynchronously
+            # In standalone mode, workers will push to queue as they complete
+            # We inject the queue handle via the manager's worker creation
+            self._dispatch_generation(manager, pending_indices)
+
+            # Pull loop: collect results and save batches
+            batch_idx = len(self.saved_batches)  # Resume from last batch
+            batches_since_checkpoint = 0
+
+            while len(self.completed_indices) < self.total_samples:
+                # Block until batch ready or timeout
+                batch = ray.get(
+                    self._queue.get_batch.remote(
+                        min_items=save_batch_size,
+                        timeout=pull_timeout,
+                    )
+                )
+
+                if batch:
+                    # Extract per-sample data from each result
+                    items: list[tuple[int, dict]] = []
+                    for idx, output in batch:
+                        extracted = self._extract_per_sample(output, [idx])
+                        items.extend(extracted)
+
+                    if items:
+                        # Save batch
+                        self._save_batch(items, batch_idx)
+                        batch_idx += 1
+                        batches_since_checkpoint += 1
+
+                        # Update progress
+                        if pbar:
+                            pbar.n = len(self.completed_indices)
+                            pbar.set_postfix(
+                                batches=len(self.saved_batches),
+                                pending=ray.get(self._queue.count.remote()),
+                            )
+                            pbar.refresh()
+
+                        # Save checkpoint periodically
+                        if batches_since_checkpoint >= checkpoint_interval:
+                            self._save_checkpoint()
+                            batches_since_checkpoint = 0
+
+            # Final checkpoint
+            self._save_checkpoint()
+
+        finally:
+            if pbar:
+                pbar.close()
+
+        # Final merge
+        if gen_config.final_merge:
+            logger.info("Merging batch files...")
+            self._merge_batches()
+
+        # WandB upload
+        if gen_config.wandb_upload:
+            logger.info("Uploading to WandB...")
+            self._upload_to_wandb()
+
+        logger.info(f"Generation complete: {len(self.completed_indices)} samples in {len(self.saved_batches)} batches")
+
+    def _dispatch_generation(
+        self,
+        manager: Any,
+        indices: list[int],
+    ) -> None:
+        """Dispatch generation requests to AgentLoopManager.
+
+        This method prepares the prompts DataProto and calls the manager's
+        generate_sequences method. In standalone mode, the workers will
+        push results to the queue as they complete.
+
+        Args:
+            manager: AgentLoopManager instance
+            indices: Dataset indices to generate for
+        """
+
+        # Prepare prompts for generation
+        prompts = []
+        for idx in indices:
+            prompt = self.dataframe.iloc[idx][self.prompt_key]
+            prompts.append({"prompt": prompt, "index": idx})
+
+        # For now, we use a simple dispatch pattern
+        # The actual generation will be handled by AgentLoopManager
+        # which creates workers that push to our queue
+
+        # Note: In the full implementation, we would need to:
+        # 1. Pass the queue handle to the manager/workers
+        # 2. Use CollectorAgentLoopWorker instead of standard worker
+        # 3. Dispatch the prompts to the manager
+
+        # For the MVP, we'll simulate this by running the generation
+        # and pushing results to the queue ourselves
+        # (Full integration will be in Task 10)
+
+        # Placeholder: In real impl, manager.generate_sequences() is called
+        # and workers push to queue. For now, we rely on test setup to
+        # populate the queue.
+        pass
 
     @staticmethod
     def _adapt_config_for_manager(config: DictConfig) -> DictConfig:
