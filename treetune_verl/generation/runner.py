@@ -228,37 +228,61 @@ class GenerationRunner:
         """Dispatch generation requests to AgentLoopManager.
 
         This method prepares the prompts DataProto and calls the manager's
-        generate_sequences method. In standalone mode, the workers will
-        push results to the queue as they complete.
+        generate_sequences method. Results are pushed to the queue for the
+        pull loop to collect.
+
+        Note: Current implementation is synchronous - calls generate_sequences()
+        which waits for all samples, then pushes results to queue. A future
+        implementation could use CollectorAgentLoopWorker for true incremental
+        push during generation.
 
         Args:
             manager: AgentLoopManager instance
             indices: Dataset indices to generate for
         """
+        import numpy as np
+        from tensordict import TensorDict
 
-        # Prepare prompts for generation
-        prompts = []
+        from verl.protocol import DataProto
+
+        # Prepare prompts DataProto for generation
+        # The agent loop expects raw_prompt in non_tensor_batch
+        prompts_list = []
         for idx in indices:
             prompt = self.dataframe.iloc[idx][self.prompt_key]
-            prompts.append({"prompt": prompt, "index": idx})
+            prompts_list.append(prompt)
 
-        # For now, we use a simple dispatch pattern
-        # The actual generation will be handled by AgentLoopManager
-        # which creates workers that push to our queue
+        # Build DataProto matching what AgentLoopWorker.generate_sequences expects
+        non_tensor_batch = {
+            "raw_prompt": np.array(prompts_list, dtype=object),
+            "index": np.array(indices, dtype=np.int64),
+        }
 
-        # Note: In the full implementation, we would need to:
-        # 1. Pass the queue handle to the manager/workers
-        # 2. Use CollectorAgentLoopWorker instead of standard worker
-        # 3. Dispatch the prompts to the manager
+        # Create a minimal batch TensorDict (agent loop may not need tensors initially)
+        # The actual sequence generation will populate the batch tensors
+        batch = TensorDict({}, batch_size=len(indices))
 
-        # For the MVP, we'll simulate this by running the generation
-        # and pushing results to the queue ourselves
-        # (Full integration will be in Task 10)
+        prompts_proto = DataProto(
+            batch=batch,
+            non_tensor_batch=non_tensor_batch,
+            meta_info={},
+        )
 
-        # Placeholder: In real impl, manager.generate_sequences() is called
-        # and workers push to queue. For now, we rely on test setup to
-        # populate the queue.
-        pass
+        # Call synchronous generate_sequences
+        # This blocks until all samples complete
+        logger.info(f"Generating {len(indices)} samples...")
+        output = manager.generate_sequences(prompts_proto)
+
+        # Push results to queue for pull loop to collect
+        # Each result is pushed individually with its index
+        logger.info(f"Pushing {len(output)} results to queue...")
+        for i in range(len(output)):
+            idx = indices[i]
+            # Create a single-sample DataProto view for this index
+            single_output = output[i : i + 1]  # DataProto slice
+            ray.get(self._queue.put.remote(idx, single_output))
+
+        logger.info("All results pushed to queue")
 
     @staticmethod
     def _adapt_config_for_manager(config: DictConfig) -> DictConfig:
@@ -294,12 +318,133 @@ class GenerationRunner:
             # Add _target_ to existing mtp config
             rollout_config["mtp"]["_target_"] = "verl.workers.config.MtpConfig"
 
+        # Ensure agent config has _target_
+        if "agent" in rollout_config and rollout_config["agent"] is not None:
+            rollout_config["agent"]["_target_"] = "verl.workers.config.AgentLoopConfig"
+            # Add custom_async_server defaults if missing
+            if (
+                "custom_async_server" not in rollout_config["agent"]
+                or rollout_config["agent"]["custom_async_server"] is None
+            ):
+                rollout_config["agent"]["custom_async_server"] = {
+                    "_target_": "verl.workers.config.CustomAsyncServerConfig",
+                    "path": None,
+                    "name": None,
+                }
+
+        # Add prometheus config if missing (required by AgentLoopManager)
+        if "prometheus" not in rollout_config or rollout_config["prometheus"] is None:
+            rollout_config["prometheus"] = {
+                "_target_": "verl.workers.config.PrometheusConfig",
+                "enable": False,
+                "port": 9090,
+                "file": "/tmp/prometheus.yml",
+                "served_model_name": None,
+            }
+
+        # Add trace config if missing
+        if "trace" not in rollout_config or rollout_config["trace"] is None:
+            rollout_config["trace"] = {
+                "_target_": "verl.workers.config.TraceConfig",
+                "backend": None,
+                "token2text": False,
+                "max_samples_per_step_per_worker": None,
+            }
+
+        # Add profiler config if missing
+        if "profiler" not in rollout_config or rollout_config["profiler"] is None:
+            rollout_config["profiler"] = {
+                "_target_": "verl.utils.profiler.ProfilerConfig",
+                "tool": None,
+                "enable": False,
+                "all_ranks": False,
+                "ranks": [],
+                "save_path": None,
+                "tool_config": None,
+            }
+
+        # Add val_kwargs if missing
+        if "val_kwargs" not in rollout_config or rollout_config["val_kwargs"] is None:
+            rollout_config["val_kwargs"] = {
+                "_target_": "verl.workers.config.SamplingConfig",
+                "top_k": -1,
+                "top_p": 1.0,
+                "temperature": 0,
+                "n": 1,
+                "do_sample": False,
+            }
+
+        # Add multi_turn config if missing
+        if "multi_turn" not in rollout_config or rollout_config["multi_turn"] is None:
+            rollout_config["multi_turn"] = {
+                "_target_": "verl.workers.config.MultiTurnConfig",
+                "enable": False,
+                "max_assistant_turns": None,
+                "tool_config_path": None,
+                "max_user_turns": None,
+                "max_parallel_calls": 1,
+                "max_tool_response_length": 256,
+                "tool_response_truncate_side": "middle",
+                "interaction_config_path": None,
+                "use_inference_chat_template": False,
+                "tokenization_sanity_check_mode": "strict",
+                "format": "hermes",
+                "num_repeat_rollouts": None,
+            }
+
+        # Add other required rollout defaults
+        rollout_defaults = {
+            "mode": "async",
+            "ignore_eos": False,
+            "enforce_eager": False,
+            "cudagraph_capture_sizes": None,
+            "expert_parallel_size": 1,
+            "max_num_batched_tokens": 8192,
+            "max_model_len": None,
+            "max_num_seqs": 1024,
+            "enable_chunked_prefill": True,
+            "enable_prefix_caching": True,
+            "logprobs_mode": "processed_logprobs",
+            "scheduling_policy": "fcfs",
+            "load_format": "dummy",
+            "log_prob_micro_batch_size": None,
+            "log_prob_micro_batch_size_per_gpu": None,
+            "log_prob_use_dynamic_bsz": False,
+            "log_prob_max_token_len_per_gpu": 16384,
+            "disable_log_stats": True,
+            "do_sample": True,
+            "n": 1,
+            "over_sample_rate": 0,
+            "multi_stage_wake_up": False,
+            "engine_kwargs": {"vllm": {}, "sglang": {}, "trtllm": {}},
+            "update_weights_bucket_megabytes": 512,
+            "skip_rollout": False,
+            "skip_dump_dir": "/tmp/rollout_dump",
+            "skip_tokenizer_init": True,
+            "enable_rollout_routing_replay": False,
+            "quantization": None,
+            "quantization_config_file": None,
+            "dtype": "bfloat16",
+        }
+        for key, default_value in rollout_defaults.items():
+            if key not in rollout_config:
+                rollout_config[key] = default_value
+
         # Deep copy model config and add _target_
         model_config = OmegaConf.to_container(config.model, resolve=True)
         model_config["_target_"] = "verl.workers.config.HFModelConfig"
 
-        # Deep copy data config
+        # Deep copy data config and add required defaults
         data_config = OmegaConf.to_container(config.data, resolve=True)
+
+        # Add data config defaults expected by SingleTurnAgentLoop
+        data_defaults = {
+            "tool_config_path": None,
+            "return_raw_chat": True,  # Required for agent loop
+        }
+        for key, default_value in data_defaults.items():
+            if key not in data_config:
+                data_config[key] = default_value
 
         # Build the nested structure
         adapted = OmegaConf.create(
