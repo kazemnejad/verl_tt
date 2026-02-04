@@ -33,8 +33,12 @@ from __future__ import annotations
 
 import json
 import pickle
+from typing import TYPE_CHECKING
 
 from omegaconf import DictConfig, OmegaConf
+
+if TYPE_CHECKING:
+    from verl.protocol import DataProto
 
 
 class GenerationRunner:
@@ -196,3 +200,96 @@ class GenerationRunner:
                 corrupt.append(batch_name)
 
         return missing, corrupt
+
+    # =========================================================================
+    # Batch Operations
+    # =========================================================================
+
+    def _extract_per_sample(self, output: DataProto, indices: list[int]) -> list[tuple[int, dict]]:
+        """Extract individual samples from batched DataProto.
+
+        Converts 2D batched tensors [batch_size, seq_len] into list of
+        1D tensors [seq_len] per sample, along with non-tensor data.
+
+        Args:
+            output: DataProto with batched generation output
+            indices: Dataset indices corresponding to each sample in the batch
+
+        Returns:
+            List of (index, sample_dict) tuples where sample_dict contains:
+            - Tensor fields as 1D tensors (sliced from batch dimension)
+            - Non-tensor fields as individual items (not arrays)
+        """
+        items: list[tuple[int, dict]] = []
+        batch_size = len(output)
+
+        for i in range(batch_size):
+            sample_dict: dict = {}
+
+            # Extract tensor fields (1D slice from 2D batch)
+            if output.batch is not None:
+                for key in output.batch.keys():
+                    sample_dict[key] = output.batch[key][i]
+
+            # Extract non-tensor fields (individual items)
+            for key, val in output.non_tensor_batch.items():
+                sample_dict[key] = val[i]
+
+            items.append((indices[i], sample_dict))
+
+        return items
+
+    def _save_batch(self, items: list[tuple[int, dict]], batch_idx: int) -> str:
+        """Save batch of samples to pickle file and update state.
+
+        Args:
+            items: List of (index, sample_dict) tuples from _extract_per_sample
+            batch_idx: Sequential batch index for filename
+
+        Returns:
+            Batch name (e.g., "batch_0000") without .pkl extension
+
+        Side effects:
+            - Writes batch_NNNN.pkl to output_dir
+            - Adds indices to self.completed_indices
+            - Appends batch name to self.saved_batches
+        """
+        batch_name = f"batch_{batch_idx:04d}"
+        batch_path = self.output_dir / f"{batch_name}.pkl"
+
+        # Save to pickle
+        with open(batch_path, "wb") as f:
+            pickle.dump(items, f)
+
+        # Update state
+        for idx, _ in items:
+            self.completed_indices.add(idx)
+        self.saved_batches.append(batch_name)
+
+        return batch_name
+
+    def _merge_batches(self) -> None:
+        """Merge all saved batch files into trajectories.pkl.
+
+        Reads all batch files, combines items, sorts by index,
+        and writes to trajectories.pkl in output_dir.
+
+        The final file contains list of (index, sample_dict) tuples
+        sorted by index for consistent ordering.
+        """
+        all_items: list[tuple[int, dict]] = []
+
+        # Load all batches
+        for batch_name in self.saved_batches:
+            batch_path = self.output_dir / f"{batch_name}.pkl"
+            with open(batch_path, "rb") as f:
+                batch_items = pickle.load(f)
+            all_items.extend(batch_items)
+
+        # Sort by index
+        all_items.sort(key=lambda x: x[0])
+
+        # Write merged file
+        trajectories_path = self.output_dir / "trajectories.pkl"
+        with open(trajectories_path, "wb") as f:
+            pickle.dump(all_items, f)
