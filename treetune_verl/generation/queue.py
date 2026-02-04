@@ -29,6 +29,7 @@ Usage:
 """
 
 import threading
+import time
 from typing import Any
 
 import ray
@@ -91,8 +92,6 @@ class ResultsQueue:
 
             # Wait with timeout, rechecking condition
             remaining = timeout
-            import time
-
             start = time.monotonic()
             while not check_condition() and remaining > 0:
                 self._condition.wait(timeout=remaining)
