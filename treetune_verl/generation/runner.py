@@ -340,3 +340,66 @@ class GenerationRunner:
         # Set instance variables
         self.prompt_key = self.config.data.prompt_key
         self.total_samples = len(self.dataframe)
+
+    # =========================================================================
+    # WandB Upload
+    # =========================================================================
+
+    def _upload_to_wandb(self) -> None:
+        """Upload trajectory files to WandB as an artifact.
+
+        Creates a WandB artifact containing:
+        - trajectories.pkl (if final_merge=True) or batch files (if final_merge=False)
+        - checkpoint.json
+
+        Upload behavior:
+        - If WandB run already active: upload to current run
+        - If no active run: create new run using wandb_project / wandb_run_name
+
+        Artifact spec:
+        - Type: "trajectories"
+        - Name: "trajectories-<run_name>"
+        """
+        import wandb
+
+        gen_config = self.config.generation
+
+        # Determine run name for artifact naming
+        run_name = gen_config.get("wandb_run_name") or "generation"
+
+        # Create artifact
+        artifact = wandb.Artifact(
+            name=f"trajectories-{run_name}",
+            type="trajectories",
+        )
+
+        # Add trajectory files based on final_merge setting
+        if gen_config.final_merge:
+            # Add merged trajectories file
+            trajectories_path = self.output_dir / "trajectories.pkl"
+            if trajectories_path.exists():
+                artifact.add_file(str(trajectories_path))
+        else:
+            # Add individual batch files
+            for batch_name in self.saved_batches:
+                batch_path = self.output_dir / f"{batch_name}.pkl"
+                if batch_path.exists():
+                    artifact.add_file(str(batch_path))
+
+        # Always add checkpoint
+        checkpoint_path = self.output_dir / "checkpoint.json"
+        if checkpoint_path.exists():
+            artifact.add_file(str(checkpoint_path))
+
+        # Upload to existing or new run
+        if wandb.run is not None:
+            # Use existing active run
+            wandb.run.log_artifact(artifact)
+        else:
+            # Create new run for upload
+            run = wandb.init(
+                project=gen_config.wandb_project,
+                name=gen_config.wandb_run_name,
+            )
+            run.log_artifact(artifact)
+            run.finish()
