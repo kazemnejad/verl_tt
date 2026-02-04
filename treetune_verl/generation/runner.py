@@ -58,26 +58,40 @@ class GenerationRunner:
 
     def _initialize(self) -> None:
         """Initialize components (separated for testing)."""
+        import pyarrow.parquet as pq
+
         # Resolve tasks to data files if configured
         if self.config.get("tasks"):
             from treetune_verl.tasks import get_dataset_paths
 
             self.config.data.files = get_dataset_paths(self.config.tasks)
 
-        # Create dataset
-        from verl.utils.dataset.rl_dataset import RLHFDataset
+        # Load data from parquet files directly
+        data_files = self.config.data.files
+        if isinstance(data_files, str):
+            data_files = [data_files]
 
-        self.dataset = RLHFDataset(
-            parquet_files=self.config.data.files,
-            prompt_key=self.config.data.prompt_key,
-            max_samples=self.config.data.get("max_samples"),
-        )
+        tables = [pq.read_table(f) for f in data_files]
+        if len(tables) > 1:
+            import pyarrow as pa
+
+            self.dataframe = pa.concat_tables(tables).to_pandas()
+        else:
+            self.dataframe = tables[0].to_pandas()
+
+        # Apply max_samples limit
+        max_samples = self.config.data.get("max_samples")
+        if max_samples and max_samples > 0:
+            self.dataframe = self.dataframe.head(max_samples)
+
+        self.prompt_key = self.config.data.prompt_key
+        self.total_samples = len(self.dataframe)
 
         # Initialize checkpoint manager
         config_snapshot = OmegaConf.to_container(self.config, resolve=True)
         self.checkpoint_manager = CheckpointManager(
             output_dir=str(self.output_dir),
-            total_samples=len(self.dataset),
+            total_samples=self.total_samples,
             config_snapshot=config_snapshot,
         )
         self.checkpoint_manager.load()
@@ -96,20 +110,25 @@ class GenerationRunner:
         Returns:
             Nested config with trainer, actor_rollout_ref, reward_model structure.
         """
+        # Keep as DictConfig to preserve attribute access
         return OmegaConf.create(
             {
-                "trainer": {
-                    "n_gpus_per_node": config.n_gpus_per_node,
-                    "nnodes": config.nnodes,
-                    "project_name": config.get("project_name", "generation"),
-                    "experiment_name": config.get("experiment_name", "run"),
-                },
-                "actor_rollout_ref": {
-                    "model": OmegaConf.to_container(config.model),
-                    "rollout": OmegaConf.to_container(config.rollout),
-                },
-                "reward_model": {"enable": False},
-                "data": OmegaConf.to_container(config.data),
+                "trainer": OmegaConf.create(
+                    {
+                        "n_gpus_per_node": config.n_gpus_per_node,
+                        "nnodes": config.nnodes,
+                        "project_name": config.get("project_name", "generation"),
+                        "experiment_name": config.get("experiment_name", "run"),
+                    }
+                ),
+                "actor_rollout_ref": OmegaConf.create(
+                    {
+                        "model": config.model,
+                        "rollout": config.rollout,
+                    }
+                ),
+                "reward_model": OmegaConf.create({"enable": False}),
+                "data": config.data,
             }
         )
 
@@ -198,11 +217,13 @@ class GenerationRunner:
         5. Final merge
         6. Optional WandB upload
         """
+        import numpy as np
+
         from verl.experimental.agent_loop.agent_loop import AgentLoopManager
         from verl.protocol import DataProto
 
         # Get pending indices
-        all_indices = list(range(len(self.dataset)))
+        all_indices = list(range(self.total_samples))
         pending_indices = self.checkpoint_manager.get_pending_indices(all_indices)
 
         if not pending_indices:
@@ -221,9 +242,20 @@ class GenerationRunner:
         self.manager = AgentLoopManager(adapted_config)
 
         # Prepare batch from pending samples
-        batch_data = self.dataset[pending_indices]
-        batch = DataProto.from_dict(batch_data)
-        batch.non_tensor_batch["index"] = pending_indices
+        pending_df = self.dataframe.iloc[pending_indices]
+        prompts = pending_df[self.prompt_key].tolist()
+
+        # Create DataProto with non_tensor_batch (AgentLoopWorker expects this)
+        non_tensor_batch = {
+            "raw_prompt": np.array(prompts, dtype=object),
+            "index": np.array(pending_indices),
+        }
+        # Add any other columns from dataframe
+        for col in pending_df.columns:
+            if col != self.prompt_key and col not in non_tensor_batch:
+                non_tensor_batch[col] = np.array(pending_df[col].tolist(), dtype=object)
+
+        batch = DataProto(non_tensor_batch=non_tensor_batch)
 
         # Progress bar
         pbar = None
@@ -237,20 +269,12 @@ class GenerationRunner:
         # Generate sequences (blocking call - manager handles async internally)
         output = self.manager.generate_sequences(batch)
 
-        # Save results
+        # Save results - output is a DataProto, save it directly
         batch_idx = len(self.checkpoint_manager.saved_batches)
-        items = list(zip(pending_indices, output, strict=True))
-
-        # Split into batches
-        for i in range(0, len(items), self.gen_config.save_batch_size):
-            batch_items = items[i : i + self.gen_config.save_batch_size]
-            self._save_batch(batch_items, batch_idx)
-            batch_idx += 1
-
-            if pbar:
-                pbar.update(len(batch_items))
+        self._save_batch([(i, output) for i in pending_indices], batch_idx)
 
         if pbar:
+            pbar.update(len(pending_indices))
             pbar.close()
 
         # Final merge
