@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 
 import ray
 from omegaconf import DictConfig
@@ -61,3 +62,14 @@ class GenerationRunner:
         self.completed_indices = set(data["completed_indices"])
         self.saved_batches = data["saved_batches"]
         return True
+
+    def _save_batch(self, items: list[tuple[int, DataProto]], batch_idx: int) -> None:
+        """Save a batch of items to a pickle file and update state."""
+        batch_name = f"batch_{batch_idx:04d}"
+        batch_path = self.output_dir / f"{batch_name}.pkl"
+        with open(batch_path, "wb") as f:
+            pickle.dump(items, f)
+        for idx, _ in items:
+            self.completed_indices.add(idx)
+        self.saved_batches.append(batch_name)
+        self._save_checkpoint()

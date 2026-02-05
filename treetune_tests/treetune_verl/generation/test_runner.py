@@ -1,6 +1,7 @@
 """Tests for GenerationLoopManager and GenerationRunner."""
 
 import json
+import pickle
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -355,3 +356,65 @@ class TestLoadCheckpoint:
             assert result is False
             assert runner.completed_indices == set()
             assert runner.saved_batches == []
+
+
+# ---------------------------------------------------------------------------
+# Task 11: _save_batch
+# ---------------------------------------------------------------------------
+
+
+class TestSaveBatch:
+    """Task 11: _save_batch writes pickle, updates state, checkpoints."""
+
+    def test_writes_pickle_file_with_items(self):
+        """batch_NNNN.pkl contains the items list."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 5
+
+            items = [(0, "fake_data_0"), (3, "fake_data_3")]
+            runner._save_batch(items, batch_idx=0)
+
+            batch_path = output_dir / "batch_0000.pkl"
+            assert batch_path.exists()
+            with open(batch_path, "rb") as f:
+                loaded = pickle.load(f)
+            assert loaded == items
+
+    def test_updates_completed_indices(self):
+        """completed_indices gains the indices from items."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 10
+
+            runner._save_batch([(1, "d1"), (4, "d4")], batch_idx=0)
+
+            assert runner.completed_indices == {1, 4}
+
+    def test_appends_batch_name_to_saved_batches(self):
+        """saved_batches grows with each _save_batch call."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 10
+
+            runner._save_batch([(0, "d0")], batch_idx=0)
+            runner._save_batch([(1, "d1")], batch_idx=1)
+
+            assert runner.saved_batches == ["batch_0000", "batch_0001"]
+
+    def test_calls_save_checkpoint(self):
+        """_save_batch calls _save_checkpoint after updating state."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 5
+
+            runner._save_batch([(2, "d2")], batch_idx=0)
+
+            # checkpoint.json should exist (written by _save_checkpoint)
+            assert (output_dir / "checkpoint.json").exists()
+            ckpt = json.loads((output_dir / "checkpoint.json").read_text())
+            assert 2 in ckpt["completed_indices"]
