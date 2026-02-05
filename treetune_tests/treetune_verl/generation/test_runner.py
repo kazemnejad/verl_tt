@@ -648,3 +648,124 @@ class TestGenerationRunnerInit:
             assert call_kwargs["project_name"] == "test_project"
             assert call_kwargs["experiment_name"] == "test_exp"
             assert runner.tracker is mock_tracking_cls.return_value
+
+
+# ---------------------------------------------------------------------------
+# Task 15: run() orchestration
+# ---------------------------------------------------------------------------
+
+
+class TestRunOrchestration:
+    """Task 15: run() loads data, dispatches, pulls, merges, uploads."""
+
+    def test_all_completed_skips_to_merge_and_upload(self):
+        """When all indices complete, skips dispatch; calls merge + upload."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 3
+            runner.completed_indices = {0, 1, 2}  # all done
+            runner.config = OmegaConf.create({"generation": {"final_merge": True, "upload_artifact": True}})
+            runner.tracker = MagicMock()
+            runner._load_data = MagicMock()
+            runner._merge_batches = MagicMock()
+            runner._upload_artifact = MagicMock()
+
+            runner.run()
+
+            runner._load_data.assert_called_once()
+            runner._merge_batches.assert_called_once()
+            runner._upload_artifact.assert_called_once()
+
+    def test_all_completed_skips_merge_when_disabled(self):
+        """When final_merge=False, _merge_batches is NOT called."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 2
+            runner.completed_indices = {0, 1}
+            runner.config = OmegaConf.create({"generation": {"final_merge": False, "upload_artifact": False}})
+            runner.tracker = MagicMock()
+            runner._load_data = MagicMock()
+            runner._merge_batches = MagicMock()
+            runner._upload_artifact = MagicMock()
+
+            runner.run()
+
+            runner._merge_batches.assert_not_called()
+            runner._upload_artifact.assert_not_called()
+
+    @patch("treetune_verl.generation.runner.ray")
+    @patch("treetune_verl.generation.runner.GenerationLoopManager")
+    @patch("treetune_verl.generation.runner.Queue")
+    def test_pending_indices_dispatches_and_pulls(self, mock_queue_cls, mock_manager_cls, mock_ray):
+        """With pending indices, creates manager, dispatches, runs pull loop."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 3
+            runner.completed_indices = {0}  # index 1, 2 pending
+            runner.config = OmegaConf.create(
+                {
+                    "generation": {
+                        "final_merge": False,
+                        "upload_artifact": False,
+                        "save_batch_size": 10,
+                        "pull_timeout": 1.0,
+                        "show_progress": False,
+                    },
+                }
+            )
+            runner.tracker = MagicMock()
+            runner._load_data = MagicMock()
+            runner._prepare_prompts = MagicMock(return_value=MagicMock())
+            runner._save_batch = MagicMock()
+            runner._merge_batches = MagicMock()
+            runner._upload_artifact = MagicMock()
+
+            # Mock queue to return items then signal completion
+            mock_queue = MagicMock()
+            mock_queue_cls.return_value = mock_queue
+
+            from queue import Empty
+
+            call_count = [0]
+
+            def queue_get_side_effect(block=True, timeout=None):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return (1, "data_1")
+                elif call_count[0] == 2:
+                    return (2, "data_2")
+                else:
+                    raise Empty()
+
+            mock_queue.get.side_effect = queue_get_side_effect
+
+            # Mock manager
+            mock_manager = MagicMock()
+            mock_manager_cls.return_value = mock_manager
+            mock_manager.dispatch_streaming.return_value = [MagicMock()]
+
+            runner.run()
+
+            # Should have dispatched
+            mock_manager.dispatch_streaming.assert_called_once()
+            # Should have called ray.get on worker refs
+            mock_ray.get.assert_called()
+            # Manager should be slept
+            mock_manager.sleep.assert_called_once()
+
+    def test_has_load_data_stub(self):
+        """_load_data exists as a method."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            assert hasattr(runner, "_load_data") or callable(getattr(runner.__class__, "_load_data", None))
+
+    def test_has_prepare_prompts_stub(self):
+        """_prepare_prompts exists as a method."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            assert hasattr(runner, "_prepare_prompts") or callable(getattr(runner.__class__, "_prepare_prompts", None))

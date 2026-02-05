@@ -120,3 +120,63 @@ class GenerationRunner:
             artifact = wandb.Artifact(name="trajectories", type="trajectories")
             artifact.add_file(str(zip_path), name="trajectories.zip")
             wandb.log_artifact(artifact)
+
+    def _load_data(self) -> None:
+        """Load dataset and set total_samples. Stub for subclass override."""
+
+    def _prepare_prompts(self, indices: list[int]) -> DataProto:
+        """Prepare DataProto prompts for the given indices. Stub for subclass override."""
+
+    def run(self) -> None:
+        """Main orchestration: load data, dispatch, pull, save, merge, upload."""
+        from queue import Empty
+
+        self._load_data()
+        gen_config = self.config.generation
+
+        pending = [i for i in range(self.total_samples) if i not in self.completed_indices]
+
+        if not pending:
+            if gen_config.final_merge:
+                self._merge_batches()
+            if gen_config.upload_artifact:
+                self._upload_artifact()
+            return
+
+        self._queue = Queue()
+        manager = GenerationLoopManager(self.config, self._queue)
+        prompts = self._prepare_prompts(pending)
+        worker_refs = manager.dispatch_streaming(prompts)
+
+        # Pull loop
+        batch_buffer: list[tuple[int, DataProto]] = []
+        batch_idx = len(self.saved_batches)
+        save_batch_size = gen_config.save_batch_size
+        pull_timeout = gen_config.pull_timeout
+
+        while len(self.completed_indices) < self.total_samples:
+            try:
+                idx, result = self._queue.get(block=True, timeout=pull_timeout)
+                batch_buffer.append((idx, result))
+                self.completed_indices.add(idx)
+
+                if len(batch_buffer) >= save_batch_size:
+                    self._save_batch(batch_buffer, batch_idx)
+                    batch_buffer = []
+                    batch_idx += 1
+            except Empty:
+                if batch_buffer:
+                    self._save_batch(batch_buffer, batch_idx)
+                    batch_buffer = []
+                    batch_idx += 1
+
+        if batch_buffer:
+            self._save_batch(batch_buffer, batch_idx)
+
+        ray.get(worker_refs)
+        manager.sleep()
+
+        if gen_config.final_merge:
+            self._merge_batches()
+        if gen_config.upload_artifact:
+            self._upload_artifact()
