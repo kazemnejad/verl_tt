@@ -1,70 +1,66 @@
-# Copyright 2025 Treetune Authors
-# Licensed under the Apache License, Version 2.0
-#
-# Base config for GenerationRunner - trajectory collection without training.
-
-# Import only the components we need from verl, not full ppo_trainer
 hydra:
   searchpath:
     - file://verl/trainer/config
 
 defaults:
-  - rollout@rollout: rollout
+  - rollout@actor_rollout_ref.rollout: rollout
   - _self_
 
-# === Hardware ===
-n_gpus_per_node: 8
-nnodes: 1
+# === Trainer (hardware + output + logging) ===
+trainer:
+  n_gpus_per_node: 8
+  nnodes: 1
+  project_name: generation
+  experiment_name: ${now:%Y%m%d_%H%M%S}
+  default_local_dir: outputs/${trainer.project_name}/${trainer.experiment_name}
+  logger: ["console", "wandb"]
 
 # === Model ===
-model:
-  path: ???  # Required: model path
-  trust_remote_code: true
-  dtype: bfloat16
+actor_rollout_ref:
+  model:
+    path: ???
+    trust_remote_code: true
+    dtype: bfloat16
+  rollout:
+    name: sglang
+    tensor_model_parallel_size: 1
+    data_parallel_size: 1
+    pipeline_model_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    temperature: 1.0
+    top_p: 1.0
+    top_k: -1
+    prompt_length: 1024
+    response_length: 4096
+    agent:
+      num_workers: 8
+      default_agent_loop: single_turn_agent
 
-# === Rollout (imported from verl, override what we need) ===
-rollout:
-  name: sglang
-  tensor_model_parallel_size: 1
-  data_parallel_size: 1
-  pipeline_model_parallel_size: 1
-  gpu_memory_utilization: 0.85
-  free_cache_engine: false
-  # Sampling
-  temperature: 1.0
-  top_p: 1.0
-  top_k: -1
-  prompt_length: 1024
-  response_length: 4096
-  calculate_log_probs: true
-  # Agent loop
-  agent:
-    num_workers: 8
-    default_agent_loop: single_turn_agent
-    agent_loop_config_path: null
+# === Reward Model (disabled) ===
+reward_model:
+  enable: false
+  use_reward_loop: false
+  enable_resource_pool: false
 
-# === Data (same as trainer - uses RLHFDataset) ===
+# === Data ===
 data:
-  files: ???  # Parquet file paths (or use tasks)
+  files: ???
   prompt_key: prompt
-  max_samples: null  # null = all samples
+  max_samples: null
+  return_raw_chat: true
 
-# === Task System (optional, resolves to data.files) ===
-tasks: null  # If set, resolves via task system → data.files
+# === Task System (optional) ===
+tasks: null
 
 # === Generation Runner ===
 generation:
-  output_dir: ${hydra:runtime.output_dir}/trajectories
   save_batch_size: 1000
   pull_timeout: 30.0
   final_merge: true
-  checkpoint_interval: 1
   show_progress: true
-  # WandB
-  wandb_upload: false
-  wandb_project: null
-  wandb_run_name: null
+  upload_artifact: true
 
-# === Project Info ===
-project_name: generation
-experiment_name: run
+# === Ray (optional) ===
+ray_kwargs:
+  ray_init: {}
+  timeline_json_file: null
