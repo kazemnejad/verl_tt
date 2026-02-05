@@ -3,6 +3,7 @@
 import json
 import pickle
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -476,3 +477,76 @@ class TestMergeBatches:
                 runner._merge_batches()
 
             merged_dp.save_to_disk.assert_called_once_with(output_dir / "trajectories.pkl")
+
+
+# ---------------------------------------------------------------------------
+# Task 13: _upload_artifact
+# ---------------------------------------------------------------------------
+
+
+class TestUploadArtifact:
+    """Task 13: _upload_artifact creates zip and logs to wandb."""
+
+    def test_creates_zip_with_existing_files(self):
+        """trajectories.zip contains trajectories.pkl and checkpoint.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.tracker = MagicMock()
+            runner.tracker.logger = {}  # no wandb
+
+            # Create the files
+            (output_dir / "trajectories.pkl").write_bytes(b"fake_data")
+            (output_dir / "checkpoint.json").write_text('{"test": true}')
+
+            runner._upload_artifact()
+
+            zip_path = output_dir / "trajectories.zip"
+            assert zip_path.exists()
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                names = zf.namelist()
+                assert "trajectories.pkl" in names
+                assert "checkpoint.json" in names
+
+    def test_logs_artifact_to_wandb_when_present(self):
+        """When wandb in tracker.logger, creates Artifact, adds file, logs it."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+
+            mock_wandb = MagicMock()
+            mock_artifact = MagicMock()
+            mock_wandb.Artifact.return_value = mock_artifact
+
+            runner.tracker = MagicMock()
+            runner.tracker.logger = {"wandb": mock_wandb}
+
+            # Create the files
+            (output_dir / "trajectories.pkl").write_bytes(b"data")
+            (output_dir / "checkpoint.json").write_text("{}")
+
+            runner._upload_artifact()
+
+            mock_wandb.Artifact.assert_called_once_with(name="trajectories", type="trajectories")
+            mock_artifact.add_file.assert_called_once_with(
+                str(output_dir / "trajectories.zip"), name="trajectories.zip"
+            )
+            mock_wandb.log_artifact.assert_called_once_with(mock_artifact)
+
+    def test_skips_missing_files_in_zip(self):
+        """If trajectories.pkl doesn't exist, it's not added to the zip."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.tracker = MagicMock()
+            runner.tracker.logger = {}
+
+            # Only checkpoint exists
+            (output_dir / "checkpoint.json").write_text("{}")
+
+            runner._upload_artifact()
+
+            with zipfile.ZipFile(output_dir / "trajectories.zip", "r") as zf:
+                names = zf.namelist()
+                assert "trajectories.pkl" not in names
+                assert "checkpoint.json" in names

@@ -84,3 +84,22 @@ class GenerationRunner:
         merged = DataProto.concat([item[1] for item in all_items])
         merged.save_to_disk(self.output_dir / "trajectories.pkl")
         return merged
+
+    def _upload_artifact(self) -> None:
+        """Create trajectories.zip and upload to wandb if available."""
+        import zipfile
+
+        zip_path = self.output_dir / "trajectories.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            trajectories_path = self.output_dir / "trajectories.pkl"
+            if trajectories_path.exists():
+                zf.write(trajectories_path, "trajectories.pkl")
+            checkpoint_path = self.output_dir / "checkpoint.json"
+            if checkpoint_path.exists():
+                zf.write(checkpoint_path, "checkpoint.json")
+
+        if "wandb" in self.tracker.logger:
+            wandb = self.tracker.logger["wandb"]
+            artifact = wandb.Artifact(name="trajectories", type="trajectories")
+            artifact.add_file(str(zip_path), name="trajectories.zip")
+            wandb.log_artifact(artifact)
