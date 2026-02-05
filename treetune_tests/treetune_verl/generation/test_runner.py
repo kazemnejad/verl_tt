@@ -168,3 +168,86 @@ class TestGenerationLoopManagerQueueInjection:
         call_args = mock_ray_get.call_args[0][0]
         assert isinstance(call_args, list)
         assert len(call_args) == len(manager.agent_loop_workers)
+
+
+def _build_manager_with_mock_workers(num_workers=2):
+    """Helper: create a GenerationLoopManager with mocked internals."""
+    import ray
+
+    from treetune_verl.generation.runner import GenerationLoopManager
+
+    config = _make_manager_config()
+    queue = MagicMock()
+
+    def side_effect(self_obj):
+        self_obj.agent_loop_workers = [MagicMock() for _ in range(num_workers)]
+
+    with (
+        patch("verl.experimental.agent_loop.agent_loop.AgentLoopManager._initialize_llm_servers"),
+        patch(
+            "verl.experimental.agent_loop.agent_loop.AgentLoopManager._init_agent_loop_workers",
+            autospec=True,
+            side_effect=side_effect,
+        ),
+        patch.object(ray, "get"),
+    ):
+        manager = GenerationLoopManager(config, queue)
+
+    return manager
+
+
+class TestDispatchStreaming:
+    """Task 8: dispatch_streaming dispatches chunks and returns refs."""
+
+    def test_calls_wake_up(self):
+        """dispatch_streaming calls self.wake_up() first."""
+        manager = _build_manager_with_mock_workers()
+        prompts = MagicMock()
+        prompts.chunk.return_value = [MagicMock(), MagicMock()]
+
+        manager.wake_up = MagicMock()
+        manager.dispatch_streaming(prompts)
+
+        manager.wake_up.assert_called_once()
+
+    def test_chunks_prompts_by_num_workers(self):
+        """Prompts are chunked by the number of agent_loop_workers."""
+        manager = _build_manager_with_mock_workers(num_workers=3)
+        prompts = MagicMock()
+        prompts.chunk.return_value = [MagicMock(), MagicMock(), MagicMock()]
+
+        manager.wake_up = MagicMock()
+        manager.dispatch_streaming(prompts)
+
+        prompts.chunk.assert_called_once_with(3)
+
+    def test_calls_generate_sequences_streaming_remote_per_worker(self):
+        """Each worker gets generate_sequences_streaming.remote(chunk)."""
+        manager = _build_manager_with_mock_workers(num_workers=2)
+        chunk_a, chunk_b = MagicMock(), MagicMock()
+        prompts = MagicMock()
+        prompts.chunk.return_value = [chunk_a, chunk_b]
+
+        manager.wake_up = MagicMock()
+        manager.dispatch_streaming(prompts)
+
+        w0, w1 = manager.agent_loop_workers
+        w0.generate_sequences_streaming.remote.assert_called_once_with(chunk_a)
+        w1.generate_sequences_streaming.remote.assert_called_once_with(chunk_b)
+
+    def test_returns_list_of_refs(self):
+        """Returns a list of ObjectRefs (one per worker)."""
+        manager = _build_manager_with_mock_workers(num_workers=2)
+        prompts = MagicMock()
+        prompts.chunk.return_value = [MagicMock(), MagicMock()]
+
+        # Each worker.generate_sequences_streaming.remote returns a mock ref
+        ref_a = MagicMock(name="ref_a")
+        ref_b = MagicMock(name="ref_b")
+        manager.agent_loop_workers[0].generate_sequences_streaming.remote.return_value = ref_a
+        manager.agent_loop_workers[1].generate_sequences_streaming.remote.return_value = ref_b
+
+        manager.wake_up = MagicMock()
+        result = manager.dispatch_streaming(prompts)
+
+        assert result == [ref_a, ref_b]

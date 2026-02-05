@@ -8,6 +8,7 @@ from ray.util.queue import Queue
 
 from treetune_verl.generation.worker import StreamingAgentLoopWorker
 from verl.experimental.agent_loop.agent_loop import AgentLoopManager
+from verl.protocol import DataProto
 
 
 class GenerationLoopManager(AgentLoopManager):
@@ -19,3 +20,12 @@ class GenerationLoopManager(AgentLoopManager):
         super().__init__(config, worker_group=None, rollout_resource_pool=None)
         # Inject queue into workers after creation
         ray.get([worker.set_queue.remote(self._queue) for worker in self.agent_loop_workers])
+
+    def dispatch_streaming(self, prompts: DataProto) -> list[ray.ObjectRef]:
+        """Non-blocking dispatch. Returns refs for completion check."""
+        self.wake_up()
+        chunks = prompts.chunk(len(self.agent_loop_workers))
+        return [
+            worker.generate_sequences_streaming.remote(chunk)
+            for worker, chunk in zip(self.agent_loop_workers, chunks, strict=False)
+        ]
