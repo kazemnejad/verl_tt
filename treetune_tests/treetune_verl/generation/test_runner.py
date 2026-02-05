@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 
 from omegaconf import OmegaConf
 
+from verl.protocol import DataProto
+
 
 def _make_manager_config():
     """Minimal config for GenerationLoopManager tests."""
@@ -418,3 +420,59 @@ class TestSaveBatch:
             assert (output_dir / "checkpoint.json").exists()
             ckpt = json.loads((output_dir / "checkpoint.json").read_text())
             assert 2 in ckpt["completed_indices"]
+
+
+# ---------------------------------------------------------------------------
+# Task 12: _merge_batches
+# ---------------------------------------------------------------------------
+
+
+def _write_batch_file(output_dir: Path, batch_name: str, items: list) -> None:
+    """Helper: write a batch pickle file directly (avoids pickling MagicMock)."""
+    with open(output_dir / f"{batch_name}.pkl", "wb") as f:
+        pickle.dump(items, f)
+
+
+class TestMergeBatches:
+    """Task 12: _merge_batches reads batches, sorts, concats, saves."""
+
+    def test_merges_batches_sorted_by_index(self):
+        """Items from all batches are sorted by index before concat."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 4
+
+            # Use simple strings as data stand-ins (picklable)
+            _write_batch_file(output_dir, "batch_0000", [(3, "dp_3"), (1, "dp_1")])
+            _write_batch_file(output_dir, "batch_0001", [(0, "dp_0"), (2, "dp_2")])
+            runner.saved_batches = ["batch_0000", "batch_0001"]
+
+            merged_dp = MagicMock(name="merged")
+            with patch.object(DataProto, "concat", return_value=merged_dp) as mock_concat:
+                result = runner._merge_batches()
+
+            # concat called with items sorted by index: 0, 1, 2, 3
+            call_args = mock_concat.call_args[0][0]
+            assert call_args == ["dp_0", "dp_1", "dp_2", "dp_3"]
+
+            # save_to_disk called
+            merged_dp.save_to_disk.assert_called_once_with(output_dir / "trajectories.pkl")
+
+            assert result is merged_dp
+
+    def test_saves_trajectories_pkl(self):
+        """Merged result is saved to trajectories.pkl via save_to_disk."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 1
+
+            _write_batch_file(output_dir, "batch_0000", [(0, "dp_0")])
+            runner.saved_batches = ["batch_0000"]
+
+            merged_dp = MagicMock()
+            with patch.object(DataProto, "concat", return_value=merged_dp):
+                runner._merge_batches()
+
+            merged_dp.save_to_disk.assert_called_once_with(output_dir / "trajectories.pkl")

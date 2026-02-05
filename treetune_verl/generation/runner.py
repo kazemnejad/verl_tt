@@ -73,3 +73,14 @@ class GenerationRunner:
             self.completed_indices.add(idx)
         self.saved_batches.append(batch_name)
         self._save_checkpoint()
+
+    def _merge_batches(self) -> DataProto:
+        """Read all batch files, sort by index, concat, save merged result."""
+        all_items: list[tuple[int, DataProto]] = []
+        for batch_name in sorted(self.saved_batches):
+            with open(self.output_dir / f"{batch_name}.pkl", "rb") as f:
+                all_items.extend(pickle.load(f))
+        all_items.sort(key=lambda x: x[0])
+        merged = DataProto.concat([item[1] for item in all_items])
+        merged.save_to_disk(self.output_dir / "trajectories.pkl")
+        return merged
