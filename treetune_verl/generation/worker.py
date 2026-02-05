@@ -21,3 +21,6 @@ class StreamingAgentLoopWorkerMixin:
         """Stream results to queue as each completes. Returns nothing."""
         if self._queue is None:
             raise RuntimeError("Queue not set. Call set_queue() first.")
+
+        if "index" not in batch.non_tensor_batch:
+            raise ValueError("'index' required in non_tensor_batch for streaming generation")
