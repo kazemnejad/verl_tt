@@ -310,3 +310,48 @@ class TestSaveCheckpoint:
 
             assert not (output_dir / "checkpoint.json.tmp").exists()
             assert (output_dir / "checkpoint.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Task 10: _load_checkpoint
+# ---------------------------------------------------------------------------
+
+
+class TestLoadCheckpoint:
+    """Task 10: _load_checkpoint restores state or returns False."""
+
+    def test_returns_true_and_restores_state_when_file_exists(self):
+        """Loads checkpoint.json → completed_indices (set), saved_batches (list)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            # Write a checkpoint file
+            (output_dir / "checkpoint.json").write_text(
+                json.dumps(
+                    {
+                        "completed_indices": [5, 2, 8],
+                        "saved_batches": ["batch_0000", "batch_0001"],
+                        "total_samples": 20,
+                    }
+                )
+            )
+
+            runner = _make_runner(output_dir)
+            result = runner._load_checkpoint()
+
+            assert result is True
+            assert runner.completed_indices == {2, 5, 8}
+            assert runner.saved_batches == ["batch_0000", "batch_0001"]
+
+    def test_returns_false_when_file_missing(self):
+        """Returns False when checkpoint.json doesn't exist; state unchanged."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.completed_indices = set()
+            runner.saved_batches = []
+
+            result = runner._load_checkpoint()
+
+            assert result is False
+            assert runner.completed_indices == set()
+            assert runner.saved_batches == []

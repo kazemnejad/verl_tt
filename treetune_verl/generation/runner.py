@@ -50,3 +50,14 @@ class GenerationRunner:
                 f,
             )
         tmp_path.rename(final_path)
+
+    def _load_checkpoint(self) -> bool:
+        """Load checkpoint.json if it exists. Returns True if loaded."""
+        checkpoint_path = self.output_dir / "checkpoint.json"
+        if not checkpoint_path.exists():
+            return False
+        with open(checkpoint_path) as f:
+            data = json.load(f)
+        self.completed_indices = set(data["completed_indices"])
+        self.saved_batches = data["saved_batches"]
+        return True
