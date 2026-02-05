@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import ray
 from omegaconf import DictConfig
 from ray.util.queue import Queue
@@ -29,3 +31,22 @@ class GenerationLoopManager(AgentLoopManager):
             worker.generate_sequences_streaming.remote(chunk)
             for worker, chunk in zip(self.agent_loop_workers, chunks, strict=False)
         ]
+
+
+class GenerationRunner:
+    """Orchestrator for streaming trajectory generation."""
+
+    def _save_checkpoint(self) -> None:
+        """Atomically write checkpoint.json (tmp → rename)."""
+        tmp_path = self.output_dir / "checkpoint.json.tmp"
+        final_path = self.output_dir / "checkpoint.json"
+        with open(tmp_path, "w") as f:
+            json.dump(
+                {
+                    "completed_indices": sorted(self.completed_indices),
+                    "saved_batches": self.saved_batches,
+                    "total_samples": self.total_samples,
+                },
+                f,
+            )
+        tmp_path.rename(final_path)

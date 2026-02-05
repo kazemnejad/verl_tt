@@ -1,5 +1,8 @@
-"""Tests for GenerationLoopManager."""
+"""Tests for GenerationLoopManager and GenerationRunner."""
 
+import json
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from omegaconf import OmegaConf
@@ -251,3 +254,59 @@ class TestDispatchStreaming:
         result = manager.dispatch_streaming(prompts)
 
         assert result == [ref_a, ref_b]
+
+
+# ---------------------------------------------------------------------------
+# GenerationRunner helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_runner(output_dir: Path):
+    """Create a GenerationRunner without calling __init__, set attributes manually."""
+    from treetune_verl.generation.runner import GenerationRunner
+
+    runner = GenerationRunner.__new__(GenerationRunner)
+    runner.output_dir = output_dir
+    runner.completed_indices = set()
+    runner.saved_batches = []
+    runner.total_samples = 0
+    return runner
+
+
+# ---------------------------------------------------------------------------
+# Task 9: _save_checkpoint (atomic write)
+# ---------------------------------------------------------------------------
+
+
+class TestSaveCheckpoint:
+    """Task 9: _save_checkpoint writes checkpoint.json atomically."""
+
+    def test_writes_checkpoint_json_with_correct_content(self):
+        """checkpoint.json contains completed_indices (sorted), saved_batches, total_samples."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.completed_indices = {3, 1, 2}
+            runner.saved_batches = ["batch_0000"]
+            runner.total_samples = 10
+
+            runner._save_checkpoint()
+
+            ckpt = json.loads((output_dir / "checkpoint.json").read_text())
+            assert ckpt["completed_indices"] == [1, 2, 3]
+            assert ckpt["saved_batches"] == ["batch_0000"]
+            assert ckpt["total_samples"] == 10
+
+    def test_atomic_write_no_tmp_file_left(self):
+        """After _save_checkpoint, no .tmp file remains."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.completed_indices = set()
+            runner.saved_batches = []
+            runner.total_samples = 0
+
+            runner._save_checkpoint()
+
+            assert not (output_dir / "checkpoint.json.tmp").exists()
+            assert (output_dir / "checkpoint.json").exists()
