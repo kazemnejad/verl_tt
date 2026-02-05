@@ -550,3 +550,101 @@ class TestUploadArtifact:
                 names = zf.namelist()
                 assert "trajectories.pkl" not in names
                 assert "checkpoint.json" in names
+
+
+# ---------------------------------------------------------------------------
+# Task 14: __init__
+# ---------------------------------------------------------------------------
+
+
+def _make_init_config(tmpdir: str):
+    """Config for GenerationRunner.__init__ tests."""
+    return OmegaConf.create(
+        {
+            "trainer": {
+                "default_local_dir": tmpdir,
+                "project_name": "test_project",
+                "experiment_name": "test_exp",
+                "logger": ["console"],
+            },
+            "generation": {
+                "save_batch_size": 100,
+                "pull_timeout": 5.0,
+                "final_merge": True,
+                "show_progress": False,
+                "upload_artifact": False,
+            },
+        }
+    )
+
+
+class TestGenerationRunnerInit:
+    """Task 14: __init__ sets state, creates output_dir, loads checkpoint."""
+
+    @patch("treetune_verl.generation.runner.Tracking")
+    def test_sets_output_dir_and_creates_it(self, mock_tracking_cls):
+        """output_dir set from config and created on disk."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sub = str(Path(tmpdir) / "sub" / "dir")
+            config = _make_init_config(sub)
+
+            from treetune_verl.generation.runner import GenerationRunner
+
+            runner = GenerationRunner(config)
+
+            assert runner.output_dir == Path(sub)
+            assert runner.output_dir.exists()
+
+    @patch("treetune_verl.generation.runner.Tracking")
+    def test_initializes_empty_state(self, mock_tracking_cls):
+        """completed_indices, saved_batches, total_samples start empty/zero."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = _make_init_config(tmpdir)
+
+            from treetune_verl.generation.runner import GenerationRunner
+
+            runner = GenerationRunner(config)
+
+            assert runner.completed_indices == set()
+            assert runner.saved_batches == []
+            assert runner.total_samples == 0
+
+    @patch("treetune_verl.generation.runner.Tracking")
+    def test_loads_existing_checkpoint(self, mock_tracking_cls):
+        """If checkpoint.json exists, state is restored from it."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Pre-write a checkpoint
+            Path(tmpdir, "checkpoint.json").write_text(
+                json.dumps(
+                    {
+                        "completed_indices": [1, 3, 5],
+                        "saved_batches": ["batch_0000"],
+                        "total_samples": 10,
+                    }
+                )
+            )
+
+            config = _make_init_config(tmpdir)
+
+            from treetune_verl.generation.runner import GenerationRunner
+
+            runner = GenerationRunner(config)
+
+            assert runner.completed_indices == {1, 3, 5}
+            assert runner.saved_batches == ["batch_0000"]
+
+    @patch("treetune_verl.generation.runner.Tracking")
+    def test_creates_tracking_instance(self, mock_tracking_cls):
+        """Tracking is instantiated with project, experiment, logger, config."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = _make_init_config(tmpdir)
+
+            from treetune_verl.generation.runner import GenerationRunner
+
+            runner = GenerationRunner(config)
+
+            mock_tracking_cls.assert_called_once()
+            call_kwargs = mock_tracking_cls.call_args[1]
+            assert call_kwargs["project_name"] == "test_project"
+            assert call_kwargs["experiment_name"] == "test_exp"
+            assert runner.tracker is mock_tracking_cls.return_value

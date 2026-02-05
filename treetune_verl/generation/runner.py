@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import pickle
+from pathlib import Path
 
 import ray
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from ray.util.queue import Queue
 
 from treetune_verl.generation.worker import StreamingAgentLoopWorker
 from verl.experimental.agent_loop.agent_loop import AgentLoopManager
 from verl.protocol import DataProto
+from verl.utils.tracking import Tracking
 
 
 class GenerationLoopManager(AgentLoopManager):
@@ -36,6 +38,21 @@ class GenerationLoopManager(AgentLoopManager):
 
 class GenerationRunner:
     """Orchestrator for streaming trajectory generation."""
+
+    def __init__(self, config: DictConfig) -> None:
+        self.config = config
+        self.output_dir = Path(config.trainer.default_local_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.completed_indices: set[int] = set()
+        self.saved_batches: list[str] = []
+        self.total_samples = 0
+        self._load_checkpoint()
+        self.tracker = Tracking(
+            project_name=config.trainer.project_name,
+            experiment_name=config.trainer.experiment_name,
+            default_backend=config.trainer.logger,
+            config=OmegaConf.to_container(config),
+        )
 
     def _save_checkpoint(self) -> None:
         """Atomically write checkpoint.json (tmp → rename)."""
