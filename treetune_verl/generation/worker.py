@@ -7,7 +7,7 @@ import asyncio
 import numpy as np
 from ray.util.queue import Queue
 
-from verl.experimental.agent_loop.agent_loop import get_trajectory_info
+from verl.experimental.agent_loop.agent_loop import AgentLoopWorker, get_trajectory_info
 from verl.protocol import DataProto
 
 
@@ -80,3 +80,9 @@ class StreamingAgentLoopWorkerMixin:
             idx, result = await coro
             single_output = self._postprocess([result])
             self._queue.put((idx, single_output))
+
+
+class StreamingAgentLoopWorker(StreamingAgentLoopWorkerMixin, AgentLoopWorker):
+    """AgentLoopWorker with streaming results to queue."""
+
+    pass

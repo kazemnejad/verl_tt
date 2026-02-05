@@ -112,3 +112,15 @@ class TestStreamingAgentLoopWorkerMixin:
         # Each result is a DataProto
         for idx, data in pushed.items():
             assert isinstance(data, DataProto)
+
+
+class TestStreamingAgentLoopWorker:
+    def test_inherits_from_both_classes(self):
+        from treetune_verl.generation.worker import (
+            StreamingAgentLoopWorker,
+            StreamingAgentLoopWorkerMixin,
+        )
+        from verl.experimental.agent_loop.agent_loop import AgentLoopWorker
+
+        assert issubclass(StreamingAgentLoopWorker, StreamingAgentLoopWorkerMixin)
+        assert issubclass(StreamingAgentLoopWorker, AgentLoopWorker)
