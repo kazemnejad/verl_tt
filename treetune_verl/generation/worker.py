@@ -16,3 +16,8 @@ class StreamingAgentLoopWorkerMixin:
     def set_queue(self, queue: Queue) -> None:
         """Set the Ray Queue for streaming results."""
         self._queue = queue
+
+    async def generate_sequences_streaming(self, batch) -> None:
+        """Stream results to queue as each completes. Returns nothing."""
+        if self._queue is None:
+            raise RuntimeError("Queue not set. Call set_queue() first.")
