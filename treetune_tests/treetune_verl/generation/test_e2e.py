@@ -40,8 +40,13 @@ def ray_context():
 
 @pytest.fixture
 def gsm8k_parquet(tmp_path):
-    """Create parquet with 32 GSM8K-style prompts (plain string, not chat format)."""
-    df = pd.DataFrame({"prompt": GSM8K_PROMPTS})
+    """Create parquet with 32 GSM8K-style prompts + proper extra_info.index."""
+    df = pd.DataFrame(
+        {
+            "prompt": GSM8K_PROMPTS,
+            "extra_info": [{"index": i} for i in range(len(GSM8K_PROMPTS))],
+        }
+    )
     parquet_path = tmp_path / "gsm8k_test.parquet"
     df.to_parquet(parquet_path)
     return parquet_path
@@ -56,7 +61,7 @@ def _build_e2e_config(data_files: list[str], output_dir: str) -> OmegaConf:
         config = compose(config_name="generation_e2e")
 
     # Override dynamic values
-    config.data.files = data_files
+    config.data.train_files = data_files
     config.trainer.default_local_dir = output_dir
     # Note: Don't call OmegaConf.resolve() here — the rollout defaults contain
     # oc.select interpolations that reference missing actor/profiler keys.
@@ -73,6 +78,35 @@ def e2e_config(gsm8k_parquet, tmp_path):
     )
 
 
+@pytest.fixture
+def e2e_dataset_and_collate(e2e_config):
+    """Create RLHFDataset + collate_fn from E2E config (same as main.py would)."""
+    from verl.trainer.main_ppo import create_rl_dataset
+    from verl.utils import hf_processor, hf_tokenizer
+    from verl.utils.dataset.rl_dataset import collate_fn
+    from verl.utils.fs import copy_to_local
+
+    OmegaConf.resolve(e2e_config)
+
+    local_path = copy_to_local(
+        e2e_config.actor_rollout_ref.model.path,
+        use_shm=e2e_config.actor_rollout_ref.model.get("use_shm", False),
+    )
+    trust_remote_code = e2e_config.data.get("trust_remote_code", False)
+    tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+    processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
+
+    dataset = create_rl_dataset(
+        e2e_config.data.train_files,
+        e2e_config.data,
+        tokenizer,
+        processor,
+        max_samples=e2e_config.data.get("train_max_samples", -1),
+    )
+
+    return dataset, collate_fn
+
+
 # ---------------------------------------------------------------------------
 # E2E Test Class
 # ---------------------------------------------------------------------------
@@ -82,11 +116,12 @@ def e2e_config(gsm8k_parquet, tmp_path):
 class TestE2EGenerationPipeline:
     """E2E integration tests requiring GPU + SGLang."""
 
-    def test_full_generation_pipeline_32_samples_2_workers(self, ray_context, e2e_config):
+    def test_full_generation_pipeline_32_samples_2_workers(self, ray_context, e2e_config, e2e_dataset_and_collate):
         """Generate 32 samples with 2 workers, verify outputs."""
         from treetune_verl.generation.runner import GenerationRunner
 
-        runner = GenerationRunner(e2e_config)
+        dataset, collate_fn = e2e_dataset_and_collate
+        runner = GenerationRunner(e2e_config, dataset, collate_fn)
         runner.run()
 
         # -- All 32 completed
@@ -141,12 +176,13 @@ class TestE2EGenerationPipeline:
         assert set(unique_vals.tolist()).issubset({0, 1}), "response_mask should only contain 0s and 1s"
         assert response_mask.sum() > 0, "response_mask should have some 1s"
 
-    def test_resume_from_partial_checkpoint(self, ray_context, e2e_config, tmp_path):
+    def test_resume_from_partial_checkpoint(self, ray_context, e2e_config, e2e_dataset_and_collate, tmp_path):
         """Test resume: complete all 32, then simulate partial checkpoint with first batch only."""
         from treetune_verl.generation.runner import GenerationRunner
 
+        dataset, collate_fn = e2e_dataset_and_collate
         # -- First run: complete all 32
-        runner1 = GenerationRunner(e2e_config)
+        runner1 = GenerationRunner(e2e_config, dataset, collate_fn)
         runner1.run()
         assert len(runner1.completed_indices) == 32
 
@@ -179,7 +215,7 @@ class TestE2EGenerationPipeline:
         resume_config = OmegaConf.create(e2e_config)
         resume_config.trainer.default_local_dir = str(resume_dir)
 
-        runner2 = GenerationRunner(resume_config)
+        runner2 = GenerationRunner(resume_config, dataset, collate_fn)
         assert len(runner2.completed_indices) == len(first_indices)
 
         runner2.run()
@@ -191,14 +227,15 @@ class TestE2EGenerationPipeline:
         merged = DataProto.load_from_disk(resume_dir / "trajectories.pkl")
         assert len(merged) == 32
 
-    def test_multiple_batches_merge_sorted(self, ray_context, e2e_config):
+    def test_multiple_batches_merge_sorted(self, ray_context, e2e_config, e2e_dataset_and_collate):
         """Small batch_size creates multiple files; merge sorts correctly."""
         from treetune_verl.generation.runner import GenerationRunner
 
+        dataset, collate_fn = e2e_dataset_and_collate
         config = OmegaConf.create(e2e_config)
         config.generation.save_batch_size = 5  # Force many small batches
 
-        runner = GenerationRunner(config)
+        runner = GenerationRunner(config, dataset, collate_fn)
         runner.run()
 
         # Should have multiple batch files (32 / 5 = at least 6)
