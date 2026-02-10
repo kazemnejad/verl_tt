@@ -7,10 +7,13 @@ import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+import torch
 from omegaconf import OmegaConf
 from torch.utils.data import Dataset
 
 from verl.protocol import DataProto
+from verl.utils.dataset.rl_dataset import collate_fn
 
 
 def _make_manager_config():
@@ -594,6 +597,57 @@ class _DummyDataset(Dataset):
         return {"prompt": f"prompt_{idx}"}
 
 
+class _IndexedDataset(Dataset):
+    """Dataset that returns dicts with tensors + non-tensors, like RLHFDataset."""
+
+    def __init__(self, size: int = 10):
+        self._size = size
+
+    def __len__(self):
+        return self._size
+
+    def __getitem__(self, idx):
+        return {
+            "input_ids": torch.tensor([idx, idx + 1, idx + 2]),
+            "attention_mask": torch.ones(3, dtype=torch.long),
+            "raw_prompt": f"prompt_{idx}",
+            "index": idx,
+        }
+
+
+class _NoIndexDataset(Dataset):
+    """Dataset that does NOT return an index field (simulates missing extra_info)."""
+
+    def __init__(self, size: int = 5):
+        self._size = size
+
+    def __len__(self):
+        return self._size
+
+    def __getitem__(self, idx):
+        return {
+            "input_ids": torch.tensor([idx]),
+            "attention_mask": torch.ones(1, dtype=torch.long),
+        }
+
+
+class _AllZeroIndexDataset(Dataset):
+    """Dataset where index is always 0 (simulates missing extra_info.index default)."""
+
+    def __init__(self, size: int = 5):
+        self._size = size
+
+    def __len__(self):
+        return self._size
+
+    def __getitem__(self, idx):
+        return {
+            "input_ids": torch.tensor([idx]),
+            "attention_mask": torch.ones(1, dtype=torch.long),
+            "index": 0,  # RLHFDataset default when extra_info missing
+        }
+
+
 def _dummy_collate_fn(batch):
     return batch
 
@@ -792,3 +846,80 @@ class TestRunOrchestration:
             output_dir = Path(tmpdir)
             runner = _make_runner(output_dir)
             assert hasattr(runner, "_prepare_prompts") or callable(getattr(runner.__class__, "_prepare_prompts", None))
+
+
+# ---------------------------------------------------------------------------
+# Task 4: _prepare_prompts (Subset + DataLoader + DataProto.from_single_dict)
+# ---------------------------------------------------------------------------
+
+
+class TestPreparePrompts:
+    """_prepare_prompts uses Subset + DataLoader + DataProto.from_single_dict."""
+
+    def test_returns_dataproto_with_correct_length(self):
+        """_prepare_prompts([1, 3]) returns DataProto with 2 samples."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.dataset = _IndexedDataset(size=10)
+            runner.collate_fn = collate_fn
+            runner.config = OmegaConf.create({})
+
+            result = runner._prepare_prompts([1, 3])
+
+            assert isinstance(result, DataProto)
+            assert len(result) == 2
+
+    def test_returns_correct_tensor_data(self):
+        """Tensors in DataProto match the dataset items at requested indices."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.dataset = _IndexedDataset(size=10)
+            runner.collate_fn = collate_fn
+            runner.config = OmegaConf.create({})
+
+            result = runner._prepare_prompts([2, 5])
+
+            # input_ids for index 2 should be [2, 3, 4]
+            assert torch.equal(result.batch["input_ids"][0], torch.tensor([2, 3, 4]))
+            # input_ids for index 5 should be [5, 6, 7]
+            assert torch.equal(result.batch["input_ids"][1], torch.tensor([5, 6, 7]))
+
+    def test_returns_correct_non_tensor_data(self):
+        """Non-tensor fields (raw_prompt, index) are in non_tensor_batch."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.dataset = _IndexedDataset(size=10)
+            runner.collate_fn = collate_fn
+            runner.config = OmegaConf.create({})
+
+            result = runner._prepare_prompts([0, 7])
+
+            assert result.non_tensor_batch["raw_prompt"][0] == "prompt_0"
+            assert result.non_tensor_batch["raw_prompt"][1] == "prompt_7"
+
+    def test_raises_on_missing_index(self):
+        """ValueError when dataset doesn't produce 'index' in non_tensor_batch."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.dataset = _NoIndexDataset(size=5)
+            runner.collate_fn = collate_fn
+            runner.config = OmegaConf.create({})
+
+            with pytest.raises(ValueError, match="index.*missing"):
+                runner._prepare_prompts([0, 1, 2])
+
+    def test_raises_on_duplicate_index(self):
+        """ValueError when index values are not unique (all-zeros default)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.dataset = _AllZeroIndexDataset(size=5)
+            runner.collate_fn = collate_fn
+            runner.config = OmegaConf.create({})
+
+            with pytest.raises(ValueError, match="index.*not unique"):
+                runner._prepare_prompts([0, 1, 2])

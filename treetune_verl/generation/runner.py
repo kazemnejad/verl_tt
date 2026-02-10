@@ -6,7 +6,6 @@ import json
 import pickle
 from pathlib import Path
 
-import numpy as np
 import ray
 from omegaconf import DictConfig, OmegaConf
 from ray.util.queue import Queue
@@ -163,44 +162,33 @@ class GenerationRunner:
             wandb.log_artifact(artifact)
 
     def _prepare_prompts(self, indices: list[int]) -> DataProto:
-        """Build DataProto with non_tensor_batch for the given sample indices.
+        """Build DataProto for given sample indices via Subset + DataLoader.
 
-        The non_tensor_batch contains the fields that AgentLoopWorker expects:
-        - index: sample indices (required by streaming mixin)
-        - raw_prompt: chat-format prompts (required by _run_agent_loop)
-        - agent_name: which agent loop to use
-        - data_source: dataset source identifier (expected by reward postprocessing)
-        - reward_model: reward config per sample (expected by reward postprocessing)
+        Validates that non_tensor_batch["index"] exists and contains unique
+        values. Raises ValueError if the dataset doesn't provide proper
+        per-row extra_info.index (RLHFDataset defaults to 0 when missing).
         """
-        data_config = self.config.data
-        prompt_key = data_config.get("prompt_key", "prompt")
-        return_raw_chat = data_config.get("return_raw_chat", True)
+        from torch.utils.data import DataLoader, Subset
 
-        prompts_raw = self._df.iloc[indices][prompt_key].tolist()
+        subset = Subset(self.dataset, indices)
+        dataloader = DataLoader(subset, batch_size=len(subset), collate_fn=self.collate_fn)
+        batch_dict = next(iter(dataloader))
+        prompts = DataProto.from_single_dict(batch_dict)
 
-        # Convert to chat format if needed
-        if return_raw_chat:
-            # Data already in chat format (list of dicts per sample)
-            raw_prompts = prompts_raw
-        else:
-            # Plain string prompts — wrap as single-turn user message
-            raw_prompts = [[{"role": "user", "content": p}] for p in prompts_raw]
+        # Validate index: streaming workers require unique per-sample indices
+        if "index" not in prompts.non_tensor_batch:
+            raise ValueError(
+                "_prepare_prompts: 'index' missing from dataset. Ensure parquet has extra_info.index per row."
+            )
+        idx_vals = prompts.non_tensor_batch["index"]
+        if len(set(idx_vals)) != len(idx_vals):
+            raise ValueError(
+                "_prepare_prompts: 'index' values are not unique "
+                f"(got {len(set(idx_vals))} unique out of {len(idx_vals)}). "
+                "Ensure parquet has extra_info.index with unique per-row values."
+            )
 
-        default_agent = self.config.actor_rollout_ref.rollout.agent.default_agent_loop
-        n = len(indices)
-
-        non_tensor_batch = {
-            "index": np.array(indices, dtype=np.int64),
-            "raw_prompt": np.array(raw_prompts, dtype=object),
-            "agent_name": np.array([default_agent] * n, dtype=object),
-            "data_source": np.array(["generation"] * n, dtype=object),
-            "reward_model": np.array([{}] * n, dtype=object),
-        }
-
-        return DataProto(
-            non_tensor_batch=non_tensor_batch,
-            meta_info={"global_steps": -1, "validate": False},
-        )
+        return prompts
 
     def run(self) -> None:
         """Main orchestration: load data, dispatch, pull, save, merge, upload."""
