@@ -3,7 +3,9 @@ hydra:
     - file://verl/trainer/config
 
 defaults:
+  - model@actor_rollout_ref.model: hf_model
   - rollout@actor_rollout_ref.rollout: rollout
+  - data@data: legacy_data
   - _self_
 
 # === Trainer (hardware + output + logging) ===
@@ -15,12 +17,10 @@ trainer:
   default_local_dir: outputs/${trainer.project_name}/${trainer.experiment_name}
   logger: ["console", "wandb"]
 
-# === Model ===
+# === Model (inherits from hf_model defaults) ===
 actor_rollout_ref:
   model:
-    path: ???
-    trust_remote_code: true
-    dtype: bfloat16
+    path: ???  # Only override what differs from hf_model defaults
   rollout:
     name: sglang
     tensor_model_parallel_size: 1
@@ -43,14 +43,18 @@ reward_model:
   enable_resource_pool: false
 
 # === Data ===
+# Inherits from legacy_data defaults (same as PPO pipeline).
+# Uses RLHFDataset via create_rl_dataset() for consistency with training.
+# Key fields: train_files, prompt_key, max_prompt_length,
+#   return_raw_chat, filter_overlong_prompts, tool_config_path, custom_cls, etc.
+# See verl/trainer/config/data/legacy_data.yaml for all available options.
 data:
-  files: ???
-  prompt_key: prompt
-  max_samples: null
-  return_raw_chat: true
+  train_files: ???
+  max_prompt_length: 1024
+  train_max_samples: -1  # -1 = use full dataset
 
 # === Task System (optional) ===
-tasks: null
+train_tasks: null
 
 # === Generation Runner ===
 generation:
