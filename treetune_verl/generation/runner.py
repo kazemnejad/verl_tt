@@ -9,6 +9,7 @@ from pathlib import Path
 import ray
 from omegaconf import DictConfig, OmegaConf
 from ray.util.queue import Queue
+from tqdm import tqdm
 
 from treetune_verl.generation.worker import StreamingAgentLoopWorker
 from verl.experimental.agent_loop.agent_loop import AgentLoopManager
@@ -191,13 +192,12 @@ class GenerationRunner:
         return prompts
 
     def run(self) -> None:
-        """Main orchestration: load data, dispatch, pull, save, merge, upload."""
+        """Main orchestration: dispatch, pull, save, merge, upload."""
         import logging
         from queue import Empty
 
         logger = logging.getLogger(__name__)
 
-        self._load_data()
         gen_config = self.config.generation
 
         pending = [i for i in range(self.total_samples) if i not in self.completed_indices]
@@ -225,44 +225,51 @@ class GenerationRunner:
         pull_timeout = gen_config.pull_timeout
         timeout_count = 0
 
-        while len(self.completed_indices) < self.total_samples:
-            try:
-                idx, result = self._queue.get(block=True, timeout=pull_timeout)
-                batch_buffer.append((idx, result))
-                self.completed_indices.add(idx)
-                timeout_count = 0
-                logger.info(
-                    "GenerationRunner: received idx=%d (%d/%d)",
-                    idx,
-                    len(self.completed_indices),
-                    self.total_samples,
-                )
-
-                if len(batch_buffer) >= save_batch_size:
-                    self._save_batch(batch_buffer, batch_idx)
-                    batch_buffer = []
-                    batch_idx += 1
-            except Empty:
-                timeout_count += 1
-                if batch_buffer:
-                    self._save_batch(batch_buffer, batch_idx)
-                    batch_buffer = []
-                    batch_idx += 1
-                # Check if workers have died
-                done_refs, pending_refs = ray.wait(worker_refs, timeout=0)
-                for ref in done_refs:
-                    try:
-                        ray.get(ref)
-                    except Exception as e:
-                        logger.error("Worker failed: %s", e)
-                        raise
-                if not pending_refs and len(self.completed_indices) < self.total_samples:
-                    logger.error(
-                        "All workers finished but only %d/%d completed",
+        pbar = tqdm(total=self.total_samples, initial=len(self.completed_indices)) if gen_config.show_progress else None
+        try:
+            while len(self.completed_indices) < self.total_samples:
+                try:
+                    idx, result = self._queue.get(block=True, timeout=pull_timeout)
+                    batch_buffer.append((idx, result))
+                    self.completed_indices.add(idx)
+                    timeout_count = 0
+                    if pbar:
+                        pbar.update(1)
+                    logger.info(
+                        "GenerationRunner: received idx=%d (%d/%d)",
+                        idx,
                         len(self.completed_indices),
                         self.total_samples,
                     )
-                    break
+
+                    if len(batch_buffer) >= save_batch_size:
+                        self._save_batch(batch_buffer, batch_idx)
+                        batch_buffer = []
+                        batch_idx += 1
+                except Empty:
+                    timeout_count += 1
+                    if batch_buffer:
+                        self._save_batch(batch_buffer, batch_idx)
+                        batch_buffer = []
+                        batch_idx += 1
+                    # Check if workers have died
+                    done_refs, pending_refs = ray.wait(worker_refs, timeout=0)
+                    for ref in done_refs:
+                        try:
+                            ray.get(ref)
+                        except Exception as e:
+                            logger.error("Worker failed: %s", e)
+                            raise
+                    if not pending_refs and len(self.completed_indices) < self.total_samples:
+                        logger.error(
+                            "All workers finished but only %d/%d completed",
+                            len(self.completed_indices),
+                            self.total_samples,
+                        )
+                        break
+        finally:
+            if pbar:
+                pbar.close()
 
         if batch_buffer:
             self._save_batch(batch_buffer, batch_idx)

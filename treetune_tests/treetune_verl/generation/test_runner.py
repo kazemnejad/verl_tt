@@ -733,7 +733,7 @@ class TestGenerationRunnerInit:
 
 
 class TestRunOrchestration:
-    """Task 15: run() loads data, dispatches, pulls, merges, uploads."""
+    """Task 15: run() dispatches, pulls, merges, uploads."""
 
     def test_all_completed_skips_to_merge_and_upload(self):
         """When all indices complete, skips dispatch; calls merge + upload."""
@@ -744,13 +744,11 @@ class TestRunOrchestration:
             runner.completed_indices = {0, 1, 2}  # all done
             runner.config = OmegaConf.create({"generation": {"final_merge": True, "upload_artifact": True}})
             runner.tracker = MagicMock()
-            runner._load_data = MagicMock()
             runner._merge_batches = MagicMock()
             runner._upload_artifact = MagicMock()
 
             runner.run()
 
-            runner._load_data.assert_called_once()
             runner._merge_batches.assert_called_once()
             runner._upload_artifact.assert_called_once()
 
@@ -763,7 +761,6 @@ class TestRunOrchestration:
             runner.completed_indices = {0, 1}
             runner.config = OmegaConf.create({"generation": {"final_merge": False, "upload_artifact": False}})
             runner.tracker = MagicMock()
-            runner._load_data = MagicMock()
             runner._merge_batches = MagicMock()
             runner._upload_artifact = MagicMock()
 
@@ -794,7 +791,6 @@ class TestRunOrchestration:
                 }
             )
             runner.tracker = MagicMock()
-            runner._load_data = MagicMock()
             runner._prepare_prompts = MagicMock(return_value=MagicMock())
             runner._save_batch = MagicMock()
             runner._merge_batches = MagicMock()
@@ -832,13 +828,6 @@ class TestRunOrchestration:
             mock_ray.get.assert_called()
             # Manager should be slept
             mock_manager.sleep.assert_called_once()
-
-    def test_has_load_data_stub(self):
-        """_load_data exists as a method."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir)
-            runner = _make_runner(output_dir)
-            assert hasattr(runner, "_load_data") or callable(getattr(runner.__class__, "_load_data", None))
 
     def test_has_prepare_prompts_stub(self):
         """_prepare_prompts exists as a method."""
@@ -923,3 +912,116 @@ class TestPreparePrompts:
 
             with pytest.raises(ValueError, match="index.*not unique"):
                 runner._prepare_prompts([0, 1, 2])
+
+
+# ---------------------------------------------------------------------------
+# Task 5: tqdm progress bar in run()
+# ---------------------------------------------------------------------------
+
+
+class TestRunProgress:
+    """tqdm progress bar in run() controlled by generation.show_progress."""
+
+    @patch("treetune_verl.generation.runner.tqdm")
+    @patch("treetune_verl.generation.runner.ray")
+    @patch("treetune_verl.generation.runner.GenerationLoopManager")
+    @patch("treetune_verl.generation.runner.Queue")
+    def test_tqdm_created_when_show_progress_true(self, mock_queue_cls, mock_manager_cls, mock_ray, mock_tqdm):
+        """When show_progress=True, tqdm is called with total and initial."""
+        from queue import Empty
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 2
+            runner.completed_indices = set()
+            runner.dataset = _DummyDataset(size=2)
+            runner.collate_fn = _dummy_collate_fn
+            runner.config = OmegaConf.create(
+                {
+                    "generation": {
+                        "final_merge": False,
+                        "upload_artifact": False,
+                        "save_batch_size": 100,
+                        "pull_timeout": 1.0,
+                        "show_progress": True,
+                    },
+                }
+            )
+            runner.tracker = MagicMock()
+            runner._prepare_prompts = MagicMock(return_value=MagicMock())
+            runner._save_batch = MagicMock()
+            runner._merge_batches = MagicMock()
+            runner._upload_artifact = MagicMock()
+
+            mock_queue = MagicMock()
+            mock_queue_cls.return_value = mock_queue
+            call_count = [0]
+
+            def queue_get_side_effect(block=True, timeout=None):
+                call_count[0] += 1
+                if call_count[0] <= 2:
+                    return (call_count[0] - 1, f"data_{call_count[0] - 1}")
+                raise Empty()
+
+            mock_queue.get.side_effect = queue_get_side_effect
+            mock_manager = MagicMock()
+            mock_manager_cls.return_value = mock_manager
+            mock_manager.dispatch_streaming.return_value = [MagicMock()]
+
+            mock_pbar = MagicMock()
+            mock_tqdm.return_value = mock_pbar
+
+            runner.run()
+
+            mock_tqdm.assert_called_once_with(total=2, initial=0)
+            assert mock_pbar.update.call_count == 2
+            mock_pbar.close.assert_called_once()
+
+    @patch("treetune_verl.generation.runner.ray")
+    @patch("treetune_verl.generation.runner.GenerationLoopManager")
+    @patch("treetune_verl.generation.runner.Queue")
+    def test_no_tqdm_when_show_progress_false(self, mock_queue_cls, mock_manager_cls, mock_ray):
+        """When show_progress=False, no tqdm is created, no crash."""
+        from queue import Empty
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 1
+            runner.completed_indices = set()
+            runner.dataset = _DummyDataset(size=1)
+            runner.collate_fn = _dummy_collate_fn
+            runner.config = OmegaConf.create(
+                {
+                    "generation": {
+                        "final_merge": False,
+                        "upload_artifact": False,
+                        "save_batch_size": 100,
+                        "pull_timeout": 1.0,
+                        "show_progress": False,
+                    },
+                }
+            )
+            runner.tracker = MagicMock()
+            runner._prepare_prompts = MagicMock(return_value=MagicMock())
+            runner._save_batch = MagicMock()
+            runner._merge_batches = MagicMock()
+            runner._upload_artifact = MagicMock()
+
+            mock_queue = MagicMock()
+            mock_queue_cls.return_value = mock_queue
+            call_count = [0]
+
+            def queue_get_side_effect(block=True, timeout=None):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return (0, "data_0")
+                raise Empty()
+
+            mock_queue.get.side_effect = queue_get_side_effect
+            mock_manager = MagicMock()
+            mock_manager_cls.return_value = mock_manager
+            mock_manager.dispatch_streaming.return_value = [MagicMock()]
+
+            runner.run()  # Should not crash
