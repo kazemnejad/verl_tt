@@ -208,3 +208,22 @@ class TestE2EGenerationPipeline:
         # Merged output has all 32
         merged = DataProto.load_from_disk(runner.output_dir / "trajectories.pkl")
         assert len(merged) == 32
+
+        # -- Verify sort order: merged rows must be sorted by original index
+        # Reconstruct the (idx, DataProto) pairs from batch files (same as _merge_batches)
+        all_items: list[tuple[int, DataProto]] = []
+        for bf in sorted(batch_files):
+            with open(bf, "rb") as f:
+                all_items.extend(pickle.load(f))
+        all_items.sort(key=lambda x: x[0])
+
+        sorted_indices = [idx for idx, _ in all_items]
+        assert sorted_indices == list(range(32)), f"Expected indices 0..31 in order, got: {sorted_indices}"
+
+        # Verify each row in merged matches the corresponding sorted item's tensor
+        for pos, (idx, single_proto) in enumerate(all_items):
+            expected_prompts = single_proto.batch["prompts"]
+            actual_prompts = merged.batch["prompts"][pos : pos + 1]
+            assert torch.equal(expected_prompts, actual_prompts), (
+                f"Merged row {pos} (index {idx}) prompts mismatch — merge did not preserve sort order"
+            )
