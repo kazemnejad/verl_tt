@@ -46,14 +46,12 @@ reward_model:
   enable_resource_pool: false
 
 data:
-  # Custom keys for GenerationRunner (not in legacy_data)
-  files: ???  # Set in test -- list of parquet file paths
-  max_samples: 32
-  # Override legacy_data defaults
-  prompt_key: prompt
+  train_files: ???  # Set in test -- list of parquet file paths
+  train_max_samples: 32
+  # Override: E2E test uses plain string prompts, not chat format
   return_raw_chat: false
 
-tasks: null
+train_tasks: null
 
 generation:
   save_batch_size: 10
