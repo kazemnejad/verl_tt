@@ -36,7 +36,9 @@ def run_generation(config) -> None:
 
     print(f"GenerationRunner hostname: {socket.gethostname()}, PID: {os.getpid()}")
     pprint(OmegaConf.to_container(config, resolve=True))
-    OmegaConf.resolve(config)
+    # NOTE: Don't call OmegaConf.resolve(config) globally — rollout defaults
+    # contain oc.select interpolations that fail in-place resolution.
+    # OmegaConf resolves lazily on attribute access.
 
     # Task system: resolve train_tasks → config.data.train_files (if configured)
     from treetune_verl.tasks import resolve_tasks_into_config

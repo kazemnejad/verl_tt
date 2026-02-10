@@ -80,13 +80,17 @@ def e2e_config(gsm8k_parquet, tmp_path):
 
 @pytest.fixture
 def e2e_dataset_and_collate(e2e_config):
-    """Create RLHFDataset + collate_fn from E2E config (same as main.py would)."""
+    """Create RLHFDataset + collate_fn from E2E config (same as main.py would).
+
+    NOTE: We don't call OmegaConf.resolve(e2e_config) globally — the rollout
+    defaults contain oc.select interpolations that reference missing actor/profiler
+    keys.  OmegaConf resolves lazily on attribute access, so we just access the
+    specific sub-trees we need (data, model).
+    """
     from verl.trainer.main_ppo import create_rl_dataset
     from verl.utils import hf_processor, hf_tokenizer
     from verl.utils.dataset.rl_dataset import collate_fn
     from verl.utils.fs import copy_to_local
-
-    OmegaConf.resolve(e2e_config)
 
     local_path = copy_to_local(
         e2e_config.actor_rollout_ref.model.path,
