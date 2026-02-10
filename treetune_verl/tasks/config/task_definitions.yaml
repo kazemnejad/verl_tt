@@ -1,0 +1,64 @@
+# Reusable task definitions.
+# Loaded via Hydra: `- task_definitions@task_defs` with searchpath `file://treetune_verl/tasks/config`
+# Compose in recipes: `train_tasks: [${task_defs.aime_2025}, ${task_defs.deepscaler}]`
+# Override from CLI:  `task_defs.aime_2025.problem_key=question`
+
+_math_like_cls: &math_like_cls
+  path: treetune_verl/tasks/math_like_task.py
+  name: MathLikeTask
+
+_math_prompt: &math_prompt "{problem}\n\nPlease reason step by step, and put your final answer within \\boxed{{}}."
+
+# ---------------------------------------------------------------------------
+# Math tasks
+# ---------------------------------------------------------------------------
+
+aime_2025:
+  custom_cls: *math_like_cls
+  loading_params:
+    args: [MathArena/aime_2025]
+    kwargs: { split: train }
+  problem_key: problem
+  answer_key: answer
+  prompt_template: *math_prompt
+  data_source: aime_2025
+
+aime_2024:
+  custom_cls: *math_like_cls
+  loading_params:
+    args: [HuggingFaceH4/aime_2024]
+    kwargs: { split: train }
+  problem_key: problem
+  answer_key: answer
+  prompt_template: *math_prompt
+  data_source: aime_2024
+
+deepscaler:
+  custom_cls: *math_like_cls
+  loading_params:
+    args: [agentica-org/DeepScaleR-Preview-Dataset]
+    kwargs: { split: train }
+  problem_key: problem
+  answer_key: answer
+  prompt_template: *math_prompt
+  data_source: deepscaler
+
+deepmath:
+  custom_cls: *math_like_cls
+  loading_params:
+    args: [zwhe99/DeepMath-103K]
+    kwargs: { split: train }
+  problem_key: question
+  answer_key: final_answer
+  prompt_template: "{question}\n\nPlease reason step by step, and put your final answer within \\boxed{{}}."
+  data_source: deepmath
+
+konkur:
+  custom_cls: *math_like_cls
+  loading_params:
+    args: [realtreetune/konkur-filtered]
+    kwargs: { split: test }
+  problem_key: problem
+  answer_key: answer
+  prompt_template: *math_prompt
+  data_source: konkur

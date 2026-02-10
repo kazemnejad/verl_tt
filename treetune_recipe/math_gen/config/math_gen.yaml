@@ -1,0 +1,34 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+    - file://treetune_verl/generation/config
+    - file://treetune_verl/tasks/config
+
+defaults:
+  - generation
+  - task_definitions@task_defs
+  - _self_
+
+trainer:
+  n_gpus_per_node: 4
+  project_name: math_gen
+  experiment_name: qwen3-30b-a3b_aime2025_${now:%Y%m%d_%H%M%S}
+
+actor_rollout_ref:
+  model:
+    path: Qwen/Qwen3-30B-A3B-Thinking-2507
+    trust_remote_code: true
+  rollout:
+    tensor_model_parallel_size: 4
+    prompt_length: 2048
+    response_length: 16384
+    gpu_memory_utilization: 0.9
+    temperature: 0.6
+    top_p: 0.95
+
+data:
+  max_prompt_length: 2048
+  trust_remote_code: true
+
+train_tasks:
+  - ${task_defs.aime_2025}
