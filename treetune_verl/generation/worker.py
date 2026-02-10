@@ -70,6 +70,8 @@ class StreamingAgentLoopWorkerMixin:
         # Create coroutines that return (index, result) pairs
         async def _run_with_idx(i: int, idx: int):
             kwargs = {k: v[i] for k, v in batch.non_tensor_batch.items()}
+            # trace=True always: upstream uses RolloutTraceConfig to subsample,
+            # but generation mode traces every sample for simplicity.
             result = await self._run_agent_loop(sampling_params, trajectory_info[i], trace=True, **kwargs)
             return (idx, result)
 

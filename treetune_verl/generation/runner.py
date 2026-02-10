@@ -219,11 +219,14 @@ class GenerationRunner:
         worker_refs = manager.dispatch_streaming(prompts)
 
         # Pull loop
+        # NOTE: completed_indices is updated eagerly here (on queue.get) for loop
+        # termination, while _save_batch also adds them for checkpoint persistence.
+        # The dual add is safe (set idempotency). On crash, unpersisted indices are
+        # lost and re-dispatched on resume — this is the intended recovery behaviour.
         batch_buffer: list[tuple[int, DataProto]] = []
         batch_idx = len(self.saved_batches)
         save_batch_size = gen_config.save_batch_size
         pull_timeout = gen_config.pull_timeout
-        timeout_count = 0
 
         pbar = tqdm(total=self.total_samples, initial=len(self.completed_indices)) if gen_config.show_progress else None
         try:
@@ -232,7 +235,6 @@ class GenerationRunner:
                     idx, result = self._queue.get(block=True, timeout=pull_timeout)
                     batch_buffer.append((idx, result))
                     self.completed_indices.add(idx)
-                    timeout_count = 0
                     if pbar:
                         pbar.update(1)
                     logger.info(
@@ -247,7 +249,6 @@ class GenerationRunner:
                         batch_buffer = []
                         batch_idx += 1
                 except Empty:
-                    timeout_count += 1
                     if batch_buffer:
                         self._save_batch(batch_buffer, batch_idx)
                         batch_buffer = []

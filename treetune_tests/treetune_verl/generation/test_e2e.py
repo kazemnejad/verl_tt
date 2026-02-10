@@ -7,9 +7,9 @@ Marks: All tests in this module are marked with @pytest.mark.gpu.
 """
 
 import json
-import os
 import pickle
 import shutil
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -56,7 +56,7 @@ def _build_e2e_config(data_files: list[str], output_dir: str) -> OmegaConf:
     """Build E2E config using Hydra compose to resolve all defaults (rollout, etc.)."""
     from hydra import compose, initialize_config_dir
 
-    config_dir = os.path.abspath("treetune_tests/treetune_verl/generation/e2e_config")
+    config_dir = str(Path(__file__).parent / "e2e_config")
     with initialize_config_dir(config_dir=config_dir, version_base=None):
         config = compose(config_name="generation_e2e")
 
