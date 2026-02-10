@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from treetune_verl.tasks.math_like_task import MathLikeTask
 from treetune_verl.tasks.task import (
     Task,
     get_dataset_paths,
@@ -20,6 +21,7 @@ from treetune_verl.tasks.task import (
 )
 
 __all__ = [
+    "MathLikeTask",
     "Task",
     "get_dataset_paths",
     "resolve_tasks_into_config",
