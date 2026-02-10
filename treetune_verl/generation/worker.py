@@ -25,6 +25,8 @@ class StreamingAgentLoopWorkerMixin:
         """Set the Ray Queue for streaming results."""
         self._queue = queue
 
+    # SYNC WARNING: verl/experimental/agent_loop/agent_loop.py:AgentLoopWorker.generate_sequences
+    # See agent-docs/sync-warnings.md
     async def generate_sequences_streaming(self, batch: DataProto) -> None:
         """Stream results to queue as each completes. Returns nothing.
 

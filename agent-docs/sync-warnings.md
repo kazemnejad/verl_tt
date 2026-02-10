@@ -89,4 +89,27 @@ When upgrading **sglang**:
 
 ---
 
+## Streaming generation feature
+
+The streaming generation worker (`treetune_verl/generation/worker.py`) reimplements the upstream `generate_sequences` method to stream individual results via a Ray Queue as each completes, instead of gathering all results at once.
+
+### 7. `StreamingAgentLoopWorkerMixin.generate_sequences_streaming()`
+
+| | |
+|---|---|
+| **Our file** | `treetune_verl/generation/worker.py` — `generate_sequences_streaming()` |
+| **Upstream** | `verl/experimental/agent_loop/agent_loop.py` — `AgentLoopWorker.generate_sequences()` (lines ~405-485) |
+| **Why copied** | Upstream gathers all results with `asyncio.gather` and returns a single `DataProto`. We need `asyncio.as_completed` to push `(idx, DataProto)` to a queue as each sample finishes. No hook to intercept individual completions. |
+| **Copied logic** | sampling_params construction (temperature, top_p, top_k, repetition_penalty, logprobs), validation override, default agent_name injection, `get_trajectory_info` call, per-sample `_run_agent_loop` + `_postprocess`. |
+| **Differences** | (1) Uses `asyncio.as_completed` + `queue.put` instead of `asyncio.gather`. (2) Always `trace=True` (upstream uses `RolloutTraceConfig` to subsample). (3) Requires `index` in `non_tensor_batch` (upstream falls back to `np.arange`). (4) No `@tqbridge()` decorator. |
+
+### Streaming generation upgrade checklist
+
+When upgrading **verl**:
+1. Diff `AgentLoopWorker.generate_sequences()` against our `generate_sequences_streaming()` — check for new sampling params, changed defaults, or new pre/post-processing steps
+2. Check `get_trajectory_info` signature
+3. Check `_postprocess` signature and behavior
+
+---
+
 <!-- Add new feature sections below this line -->
