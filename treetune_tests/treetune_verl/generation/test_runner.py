@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from omegaconf import OmegaConf
+from torch.utils.data import Dataset
 
 from verl.protocol import DataProto
 
@@ -274,6 +275,8 @@ def _make_runner(output_dir: Path):
     runner.completed_indices = set()
     runner.saved_batches = []
     runner.total_samples = 0
+    runner.dataset = None
+    runner.collate_fn = None
     return runner
 
 
@@ -578,6 +581,23 @@ def _make_init_config(tmpdir: str):
     )
 
 
+class _DummyDataset(Dataset):
+    """Minimal dataset for unit tests."""
+
+    def __init__(self, size: int = 10):
+        self._size = size
+
+    def __len__(self):
+        return self._size
+
+    def __getitem__(self, idx):
+        return {"prompt": f"prompt_{idx}"}
+
+
+def _dummy_collate_fn(batch):
+    return batch
+
+
 class TestGenerationRunnerInit:
     """Task 14: __init__ sets state, creates output_dir, loads checkpoint."""
 
@@ -590,24 +610,27 @@ class TestGenerationRunnerInit:
 
             from treetune_verl.generation.runner import GenerationRunner
 
-            runner = GenerationRunner(config)
+            runner = GenerationRunner(config, _DummyDataset(), _dummy_collate_fn)
 
             assert runner.output_dir == Path(sub)
             assert runner.output_dir.exists()
 
     @patch("treetune_verl.generation.runner.Tracking")
     def test_initializes_empty_state(self, mock_tracking_cls):
-        """completed_indices, saved_batches, total_samples start empty/zero."""
+        """completed_indices, saved_batches start empty; total_samples = len(dataset)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             config = _make_init_config(tmpdir)
+            dataset = _DummyDataset(size=10)
 
             from treetune_verl.generation.runner import GenerationRunner
 
-            runner = GenerationRunner(config)
+            runner = GenerationRunner(config, dataset, _dummy_collate_fn)
 
             assert runner.completed_indices == set()
             assert runner.saved_batches == []
-            assert runner.total_samples == 0
+            assert runner.total_samples == 10
+            assert runner.dataset is dataset
+            assert runner.collate_fn is _dummy_collate_fn
 
     @patch("treetune_verl.generation.runner.Tracking")
     def test_loads_existing_checkpoint(self, mock_tracking_cls):
@@ -628,7 +651,7 @@ class TestGenerationRunnerInit:
 
             from treetune_verl.generation.runner import GenerationRunner
 
-            runner = GenerationRunner(config)
+            runner = GenerationRunner(config, _DummyDataset(), _dummy_collate_fn)
 
             assert runner.completed_indices == {1, 3, 5}
             assert runner.saved_batches == ["batch_0000"]
@@ -641,7 +664,7 @@ class TestGenerationRunnerInit:
 
             from treetune_verl.generation.runner import GenerationRunner
 
-            runner = GenerationRunner(config)
+            runner = GenerationRunner(config, _DummyDataset(), _dummy_collate_fn)
 
             mock_tracking_cls.assert_called_once()
             call_kwargs = mock_tracking_cls.call_args[1]

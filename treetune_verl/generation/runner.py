@@ -7,7 +7,6 @@ import pickle
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import ray
 from omegaconf import DictConfig, OmegaConf
 from ray.util.queue import Queue
@@ -79,13 +78,15 @@ class GenerationLoopManager(AgentLoopManager):
 class GenerationRunner:
     """Orchestrator for streaming trajectory generation."""
 
-    def __init__(self, config: DictConfig) -> None:
+    def __init__(self, config: DictConfig, dataset, collate_fn) -> None:
         self.config = config
         self.output_dir = Path(config.trainer.default_local_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.dataset = dataset
+        self.collate_fn = collate_fn
+        self.total_samples = len(dataset)
         self.completed_indices: set[int] = set()
         self.saved_batches: list[str] = []
-        self.total_samples = 0
         self._load_checkpoint()
         self.tracker = Tracking(
             project_name=config.trainer.project_name,
@@ -160,25 +161,6 @@ class GenerationRunner:
             artifact = wandb.Artifact(name="trajectories", type="trajectories")
             artifact.add_file(str(zip_path), name="trajectories.zip")
             wandb.log_artifact(artifact)
-
-    def _load_data(self) -> None:
-        """Load parquet files, apply max_samples, set total_samples."""
-        data_config = self.config.data
-        data_files = data_config.files
-        # Normalize to plain Python list of strings (OmegaConf ListConfig → list)
-        if isinstance(data_files, str):
-            data_files = [data_files]
-        else:
-            data_files = list(data_files)
-
-        frames = [pd.read_parquet(str(f)) for f in data_files]
-        self._df = pd.concat(frames, axis=0, ignore_index=True)
-
-        max_samples = data_config.get("max_samples", None)
-        if max_samples is not None:
-            self._df = self._df.head(max_samples)
-
-        self.total_samples = len(self._df)
 
     def _prepare_prompts(self, indices: list[int]) -> DataProto:
         """Build DataProto with non_tensor_batch for the given sample indices.
