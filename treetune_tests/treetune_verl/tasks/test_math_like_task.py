@@ -143,3 +143,59 @@ class TestMathLikeMapFn:
         assert result["prompt"][0]["content"] == "Be helpful."
         assert result["prompt"][1]["role"] == "user"
         assert result["prompt"][1]["content"] == "What is 1+1?"
+
+
+class TestMathLikeFiltering:
+    """Tests for MathLikeTask.build_dataset() filtering."""
+
+    def _build_from_rows(self, rows: list[dict], overrides: dict | None = None):
+        """Build a dataset from in-memory rows through MathLikeTask."""
+        from unittest.mock import patch
+
+        from datasets import Dataset as HFDataset
+
+        task = _make_task(overrides)
+        mock_ds = HFDataset.from_list(rows)
+        with patch.object(task, "_load_from_hf", return_value=mock_ds):
+            return task.build_dataset()
+
+    def test_empty_answer_filtered_by_default(self):
+        rows = [
+            {"problem": "Q1", "answer": "42"},
+            {"problem": "Q2", "answer": ""},
+        ]
+        ds = self._build_from_rows(rows)
+        assert len(ds) == 1
+        assert ds[0]["extra_info"]["question"] == "Q1"
+
+    def test_empty_answer_kept_when_disabled(self):
+        rows = [
+            {"problem": "Q1", "answer": "42"},
+            {"problem": "Q2", "answer": ""},
+        ]
+        ds = self._build_from_rows(rows, {"filter_empty_answers": False})
+        assert len(ds) == 2
+
+    def test_pass_rate_filtering(self):
+        rows = [
+            {"problem": "Q1", "answer": "1", "pass_rate": 0.0},
+            {"problem": "Q2", "answer": "2", "pass_rate": 0.5},
+            {"problem": "Q3", "answer": "3", "pass_rate": 1.0},
+        ]
+        ds = self._build_from_rows(
+            rows,
+            {
+                "pass_rate_min": 0.3,
+                "pass_rate_max": 0.7,
+            },
+        )
+        assert len(ds) == 1
+        assert ds[0]["extra_info"]["question"] == "Q2"
+
+    def test_no_filtering_when_all_defaults(self):
+        rows = [
+            {"problem": "Q1", "answer": "1"},
+            {"problem": "Q2", "answer": "2"},
+        ]
+        ds = self._build_from_rows(rows)
+        assert len(ds) == 2

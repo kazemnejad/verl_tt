@@ -40,7 +40,8 @@ class MathLikeTask(Task):
             if not isinstance(raw_answer, str):
                 raw_answer = str(raw_answer)
 
-            normalized = _normalize_answer(raw_answer)
+            # Skip normalization for empty answers so filter_empty_answers works
+            normalized = "" if raw_answer == "" else _normalize_answer(raw_answer)
 
             result["reward_model"] = {
                 "style": "rule",
@@ -55,22 +56,25 @@ class MathLikeTask(Task):
         return _transform
 
     def build_dataset(self):
-        ds = super().build_dataset()
-
         filter_empty = _resolve(self.config.get("filter_empty_answers", True))
-        pass_rate_min = _resolve(self.config.get("pass_rate_min", 0.0))
-        pass_rate_max = _resolve(self.config.get("pass_rate_max", 1.0))
+        pass_rate_min = float(_resolve(self.config.get("pass_rate_min", 0.0)))
+        pass_rate_max = float(_resolve(self.config.get("pass_rate_max", 1.0)))
         pass_rate_key = _resolve(self.config.get("pass_rate_key", "pass_rate"))
 
-        filter_fns = []
+        # -- Pre-map filter: pass_rate operates on raw columns --
+        raw_ds = self._load_from_hf()
+        if pass_rate_min > 0 or pass_rate_max < 1:
+            raw_ds = raw_ds.filter(lambda x: x[pass_rate_key] >= pass_rate_min and x[pass_rate_key] <= pass_rate_max)
+
+        # -- Map --
+        map_fn = self._make_map_fn()
+        remove_cols = raw_ds.column_names
+        ds = raw_ds.map(map_fn, with_indices=True, remove_columns=remove_cols)
+
+        # -- Post-map filter: empty answers on mapped data --
         if filter_empty:
-            filter_fns.append(
+            ds = ds.filter(
                 lambda x: x["reward_model"]["ground_truth"] is not None and len(x["reward_model"]["ground_truth"]) > 0
             )
-        if pass_rate_min > 0 or pass_rate_max < 1:
-            filter_fns.append(lambda x: x[pass_rate_key] >= pass_rate_min and x[pass_rate_key] <= pass_rate_max)
-
-        if filter_fns:
-            ds = ds.filter(lambda x: all(fn(x) for fn in filter_fns))
 
         return ds
