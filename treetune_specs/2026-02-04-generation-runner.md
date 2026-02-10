@@ -215,11 +215,34 @@ class GenerationRunner:
         ...
 
     def _prepare_prompts(self, indices: list[int]) -> DataProto:
-        """Load and prepare prompts for given indices via DataLoader."""
+        """Load and prepare prompts for given indices via DataLoader.
+
+        After building the DataProto, validates that ``non_tensor_batch["index"]``
+        exists and contains unique values (not the all-zeros default that
+        RLHFDataset produces when ``extra_info`` is missing from the parquet).
+        Raises ValueError if validation fails — callers must provide datasets
+        with proper per-row ``extra_info.index`` values.
+        """
         subset = Subset(self.dataset, indices)
         dataloader = DataLoader(subset, batch_size=len(subset), collate_fn=self.collate_fn)
         batch_dict = next(iter(dataloader))
-        return DataProto.from_single_dict(batch_dict)
+        prompts = DataProto.from_single_dict(batch_dict)
+
+        # Validate index: streaming workers require unique per-sample indices
+        if "index" not in prompts.non_tensor_batch:
+            raise ValueError(
+                "_prepare_prompts: 'index' missing from dataset. "
+                "Ensure parquet has extra_info.index per row."
+            )
+        idx_vals = prompts.non_tensor_batch["index"]
+        if len(set(idx_vals)) != len(idx_vals):
+            raise ValueError(
+                "_prepare_prompts: 'index' values are not unique "
+                f"(got {len(set(idx_vals))} unique out of {len(idx_vals)}). "
+                "Ensure parquet has extra_info.index with unique per-row values."
+            )
+
+        return prompts
 
     def run(self) -> None:
         self._queue = Queue()
@@ -328,7 +351,7 @@ data:
   train_max_samples: -1  # -1 = use full dataset
 
 # === Task System (optional) ===
-tasks: null
+train_tasks: null
 
 # === Generation Runner ===
 generation:

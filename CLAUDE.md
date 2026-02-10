@@ -24,7 +24,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 
 ## Agent-Docs (`agent-docs/`) index
 - **`verl-framework-guide.md`**: Big picture of how verl works—architecture, core abstractions, how components communicate, supported backends. The most important doc. For anything verl related. Read first.
-- **`development-guide.md`**: How to develop on top of verl—upstream isolation, parallel directory layout, extension strategy (config injection > subclass > monkey-patch), recipe/test/script structure, checklists. Read before implementing anything.
+- **`development-guide.md`**: How to develop on top of verl—upstream isolation, parallel directory layout, extension strategy (config injection > subclass > monkey-patch), recipe/test/script structure, checklists. Read before implementing anything or brainstorming/planning.
 - **`ppo-trainer-lifecycle.md`**: How the training loop runs step by step—data flow, when each computation happens, how to extend it. This is the second most important doc; especially relevant to understanding the overal flow of the training loop.
 - **`actor-rollout-ref-worker.md`**: The worker that handles both training and generation—how it switches between modes and syncs weights. The visibility to verl's most commonly used internal component.
 - **`ray-api-tutorial.md`**: How to write distributed code in verl—workers, data dispatch, GPU sharing patterns, and how verl uses Ray.
@@ -35,6 +35,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - **`sglang-engine-guide.md`**: How sglang's inference engine (SRT) works—process architecture, request lifecycle, scheduling, KV cache, RadixAttention, model execution, sampling, and verl integration. Read when debugging inference, rollout, or weight sync issues.
 - **`sync-warnings.md`**: Catalog of every sync-sensitive site across the codebase (copied/monkey-patched upstream methods). Per-feature sections with upgrade checklists for verl and sglang. Read when upgrading dependencies or adding new monkey-patches.
 - **`official-docs-index.md`**: Index of verl's 82 official docs. Use as lookup when agent-docs don't cover your topic.
+- **`ttxrun-guide.md`**: How to use ttxrun for experiment management—upload bundles, launch to clusters, monitor status. Two-phase deployment: upload (package code) → launch (deploy). Read when running experiments.
 
 ## General Protocol
 - Contact: Amirhossein Kazemnejad (@kazemnejad, ah.kazemnejad@gmail.com).
