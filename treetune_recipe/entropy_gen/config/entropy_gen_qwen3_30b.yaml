@@ -10,19 +10,32 @@ defaults:
   - _self_
 
 trainer:
+  n_gpus_per_node: 4
   project_name: entropy_gen
-  experiment_name: gen_entropy
+  experiment_name: qwen3-30b-a3b_hmmt_aime25
 
 actor_rollout_ref:
   model:
-    path: ???
+    path: Qwen/Qwen3-30B-A3B-Thinking-2507
+    trust_remote_code: true
   rollout:
-    entropy_top_k: 0  # 0 = full-vocab entropy
+    tensor_model_parallel_size: 4
+    prompt_length: 2048
+    response_length: 16384
+    gpu_memory_utilization: 0.7
+    temperature: 0.6
+    top_p: 0.95
     agent:
+      num_workers: 1
       default_agent_loop: entropy_single_turn_agent
+
+data:
+  max_prompt_length: 2048
+  trust_remote_code: true
 
 generation:
   custom_manager_cls: treetune_recipe.entropy_gen.agent_loop.EntropyGenerationLoopManager
 
 train_tasks:
-  - ${task_defs.hmmt_feb_2025}
+  # - ${task_defs.hmmt_feb_2025}
+  - ${task_defs.aime_2025}
