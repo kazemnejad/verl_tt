@@ -6,6 +6,7 @@ import json
 import pickle
 from pathlib import Path
 
+import numpy as np
 import ray
 from omegaconf import DictConfig, OmegaConf
 from ray.util.queue import Queue
@@ -29,8 +30,10 @@ class GenerationLoopManager(AgentLoopManager):
 
     def dispatch_streaming(self, prompts: DataProto) -> list[ray.ObjectRef]:
         """Non-blocking dispatch. Returns refs for completion check."""
+
         self.wake_up()
-        chunks = prompts.chunk(len(self.agent_loop_workers))
+        n = len(self.agent_loop_workers)
+        chunks = [prompts[s] for s in np.array_split(range(len(prompts)), n) if len(s)]
         return [
             worker.generate_sequences_streaming.remote(chunk)
             for worker, chunk in zip(self.agent_loop_workers, chunks, strict=False)
