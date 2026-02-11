@@ -62,3 +62,13 @@ konkur:
   answer_key: answer
   prompt_template: *math_prompt
   data_source: konkur
+
+hmmt_feb_2025:
+  custom_cls: *math_like_cls
+  loading_params:
+    args: [MathArena/hmmt_feb_2025]
+    kwargs: { split: train }
+  problem_key: problem
+  answer_key: answer
+  prompt_template: *math_prompt
+  data_source: hmmt_feb_2025
