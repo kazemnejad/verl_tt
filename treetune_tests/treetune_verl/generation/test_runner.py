@@ -127,6 +127,36 @@ class TestGenerationLoopManagerInit:
         assert manager.worker_group is None
 
 
+class TestGenerationLoopManagerSubclass:
+    """Subclass can pre-set agent_loop_workers_class before super().__init__()."""
+
+    @patch("verl.experimental.agent_loop.agent_loop.AgentLoopManager._initialize_llm_servers")
+    @patch(
+        "verl.experimental.agent_loop.agent_loop.AgentLoopManager._init_agent_loop_workers",
+        autospec=True,
+    )
+    def test_preserves_pre_set_worker_class(self, mock_init_workers, mock_init_servers):
+        """If subclass sets agent_loop_workers_class before super().__init__, it is preserved."""
+        import ray
+
+        from treetune_verl.generation.runner import GenerationLoopManager
+
+        mock_init_workers.side_effect = _init_workers_side_effect
+
+        class _SubManager(GenerationLoopManager):
+            def __init__(self, config, queue):
+                self.agent_loop_workers_class = "custom_sentinel"
+                super().__init__(config, queue)
+
+        queue = MagicMock()
+        config = _make_manager_config()
+
+        with patch.object(ray, "get"):
+            manager = _SubManager(config, queue)
+
+        assert manager.agent_loop_workers_class == "custom_sentinel"
+
+
 class TestGenerationLoopManagerQueueInjection:
     """Task 7: queue injection into workers after init."""
 

@@ -23,7 +23,8 @@ class GenerationLoopManager(AgentLoopManager):
 
     def __init__(self, config: DictConfig, queue: Queue):
         self._queue = queue
-        self.agent_loop_workers_class = ray.remote(StreamingAgentLoopWorker)
+        if not hasattr(self, "agent_loop_workers_class"):
+            self.agent_loop_workers_class = ray.remote(StreamingAgentLoopWorker)
         super().__init__(config, worker_group=None, rollout_resource_pool=None)
         # Inject queue into workers after creation
         ray.get([worker.set_queue.remote(self._queue) for worker in self.agent_loop_workers])
