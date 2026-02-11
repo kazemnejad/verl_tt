@@ -14,6 +14,7 @@
 
 """Tests for entropy_gen recipe: StreamingEntropyWorker + EntropyGenerationLoopManager."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from omegaconf import OmegaConf
@@ -122,3 +123,14 @@ class TestEntropyGenerationLoopManagerSetsEntropyClasses:
         # Queue injection happened
         for worker in manager.agent_loop_workers:
             worker.set_queue.remote.assert_called_once_with(queue)
+
+
+def test_entropy_gen_config_has_expected_overrides():
+    """Verify entropy_gen.yaml has the key entropy-specific overrides."""
+    config_path = Path(__file__).parents[3] / "treetune_recipe" / "entropy_gen" / "config" / "entropy_gen.yaml"
+    raw = OmegaConf.load(config_path)
+
+    # Entropy-specific overrides
+    assert raw.actor_rollout_ref.rollout.entropy_top_k == 0
+    assert raw.actor_rollout_ref.rollout.agent.default_agent_loop == "entropy_single_turn_agent"
+    assert raw.generation.custom_manager_cls == "treetune_recipe.entropy_gen.agent_loop.EntropyGenerationLoopManager"

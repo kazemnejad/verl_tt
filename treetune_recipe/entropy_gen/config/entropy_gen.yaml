@@ -1,0 +1,28 @@
+hydra:
+  searchpath:
+    - file://treetune_verl/generation/config
+    - file://treetune_verl/tasks/config
+    - file://verl/trainer/config
+
+defaults:
+  - generation
+  - task_definitions@task_defs
+  - _self_
+
+trainer:
+  project_name: entropy_gen
+  experiment_name: ${now:%Y%m%d_%H%M%S}
+
+actor_rollout_ref:
+  model:
+    path: ???
+  rollout:
+    entropy_top_k: 0  # 0 = full-vocab entropy
+    agent:
+      default_agent_loop: entropy_single_turn_agent
+
+generation:
+  custom_manager_cls: treetune_recipe.entropy_gen.agent_loop.EntropyGenerationLoopManager
+
+train_tasks:
+  - ${task_defs.hmmt_feb_2025}
