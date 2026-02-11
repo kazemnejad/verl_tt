@@ -1055,3 +1055,120 @@ class TestRunProgress:
             mock_manager.dispatch_streaming.return_value = [MagicMock()]
 
             runner.run()  # Should not crash
+
+
+# ---------------------------------------------------------------------------
+# Task 3: custom_manager_cls config default and dynamic loading
+# ---------------------------------------------------------------------------
+
+
+class TestRunCustomManagerCls:
+    """run() uses custom_manager_cls FQN when set, default GenerationLoopManager when null."""
+
+    @patch("treetune_verl.generation.runner.ray")
+    @patch("treetune_verl.generation.runner.GenerationLoopManager")
+    @patch("treetune_verl.generation.runner.Queue")
+    def test_run_uses_default_manager_when_custom_cls_null(self, mock_queue_cls, mock_manager_cls, mock_ray):
+        """When custom_manager_cls is None, GenerationLoopManager is used."""
+        from queue import Empty
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 2
+            runner.completed_indices = {0}  # index 1 pending
+            runner.config = OmegaConf.create(
+                {
+                    "generation": {
+                        "final_merge": False,
+                        "upload_artifact": False,
+                        "save_batch_size": 100,
+                        "pull_timeout": 1.0,
+                        "show_progress": False,
+                        "custom_manager_cls": None,
+                    },
+                }
+            )
+            runner.tracker = MagicMock()
+            runner._prepare_prompts = MagicMock(return_value=MagicMock())
+            runner._save_batch = MagicMock()
+            runner._merge_batches = MagicMock()
+            runner._upload_artifact = MagicMock()
+
+            mock_queue = MagicMock()
+            mock_queue_cls.return_value = mock_queue
+            call_count = [0]
+
+            def queue_get_side_effect(block=True, timeout=None):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return (1, "data_1")
+                raise Empty()
+
+            mock_queue.get.side_effect = queue_get_side_effect
+            mock_manager = MagicMock()
+            mock_manager_cls.return_value = mock_manager
+            mock_manager.dispatch_streaming.return_value = [MagicMock()]
+
+            runner.run()
+
+            # GenerationLoopManager was instantiated (not some custom class)
+            mock_manager_cls.assert_called_once()
+
+    @patch("treetune_verl.generation.runner.load_class_from_fqn")
+    @patch("treetune_verl.generation.runner.ray")
+    @patch("treetune_verl.generation.runner.GenerationLoopManager")
+    @patch("treetune_verl.generation.runner.Queue")
+    def test_run_loads_custom_manager_from_fqn(self, mock_queue_cls, mock_manager_cls, mock_ray, mock_load_fqn):
+        """When custom_manager_cls is a FQN string, load_class_from_fqn is used."""
+        from queue import Empty
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            runner = _make_runner(output_dir)
+            runner.total_samples = 2
+            runner.completed_indices = {0}  # index 1 pending
+            runner.config = OmegaConf.create(
+                {
+                    "generation": {
+                        "final_merge": False,
+                        "upload_artifact": False,
+                        "save_batch_size": 100,
+                        "pull_timeout": 1.0,
+                        "show_progress": False,
+                        "custom_manager_cls": "some.module.CustomManager",
+                    },
+                }
+            )
+            runner.tracker = MagicMock()
+            runner._prepare_prompts = MagicMock(return_value=MagicMock())
+            runner._save_batch = MagicMock()
+            runner._merge_batches = MagicMock()
+            runner._upload_artifact = MagicMock()
+
+            mock_queue = MagicMock()
+            mock_queue_cls.return_value = mock_queue
+            call_count = [0]
+
+            def queue_get_side_effect(block=True, timeout=None):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return (1, "data_1")
+                raise Empty()
+
+            mock_queue.get.side_effect = queue_get_side_effect
+
+            # load_class_from_fqn returns a mock custom class
+            mock_custom_cls = MagicMock()
+            mock_load_fqn.return_value = mock_custom_cls
+            mock_custom_manager = MagicMock()
+            mock_custom_cls.return_value = mock_custom_manager
+            mock_custom_manager.dispatch_streaming.return_value = [MagicMock()]
+
+            runner.run()
+
+            # load_class_from_fqn was called with the FQN
+            mock_load_fqn.assert_called_once_with("some.module.CustomManager", description="GenerationLoopManager")
+            # The custom class was instantiated, NOT GenerationLoopManager
+            mock_custom_cls.assert_called_once()
+            mock_manager_cls.assert_not_called()

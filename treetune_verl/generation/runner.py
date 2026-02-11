@@ -15,6 +15,7 @@ from tqdm import tqdm
 from treetune_verl.generation.worker import StreamingAgentLoopWorker
 from verl.experimental.agent_loop.agent_loop import AgentLoopManager
 from verl.protocol import DataProto
+from verl.utils.import_utils import load_class_from_fqn
 from verl.utils.tracking import Tracking
 
 
@@ -215,7 +216,12 @@ class GenerationRunner:
             return
 
         self._queue = Queue()
-        manager = GenerationLoopManager(self.config, self._queue)
+        cls_fqn = gen_config.get("custom_manager_cls", None)
+        if cls_fqn:
+            manager_cls = load_class_from_fqn(cls_fqn, description="GenerationLoopManager")
+        else:
+            manager_cls = GenerationLoopManager
+        manager = manager_cls(self.config, self._queue)
         prompts = self._prepare_prompts(pending)
         logger.info(
             "GenerationRunner: dispatching %d prompts to %d workers", len(prompts), len(manager.agent_loop_workers)

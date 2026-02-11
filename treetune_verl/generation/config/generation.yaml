@@ -54,6 +54,7 @@ train_tasks: null
 
 # === Generation Runner ===
 generation:
+  custom_manager_cls: null   # FQN of custom GenerationLoopManager subclass
   save_batch_size: 1000
   pull_timeout: 30.0
   final_merge: true
