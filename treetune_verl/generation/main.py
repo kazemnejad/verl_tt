@@ -13,7 +13,7 @@ from verl.trainer.constants_ppo import get_ppo_ray_runtime_env
 from verl.utils.device import auto_set_device
 
 
-@hydra.main(config_path="config", config_name="generation", version_base=None)
+@hydra.main(config_path="config", config_name="standalone", version_base=None)
 def main(config):
     auto_set_device(config)
     run_generation(config)

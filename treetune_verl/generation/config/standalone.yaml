@@ -1,0 +1,8 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+    - file://treetune_verl/tasks/config
+
+defaults:
+  - generation
+  - _self_
