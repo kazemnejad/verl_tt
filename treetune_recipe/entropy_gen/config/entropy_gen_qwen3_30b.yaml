@@ -12,13 +12,14 @@ defaults:
 trainer:
   n_gpus_per_node: 4
   project_name: entropy_gen
-  experiment_name: qwen3-30b-a3b_hmmt_aime25
+  experiment_name: qwen3-30b-a3b_hmmt_feb_2025
 
 actor_rollout_ref:
   model:
     path: Qwen/Qwen3-30B-A3B-Thinking-2507
     trust_remote_code: true
   rollout:
+    calculate_log_probs: true  # Required for entropy extraction
     tensor_model_parallel_size: 4
     prompt_length: 2048
     response_length: 16384
@@ -37,5 +38,5 @@ generation:
   custom_manager_cls: treetune_recipe.entropy_gen.agent_loop.EntropyGenerationLoopManager
 
 train_tasks:
-  # - ${task_defs.hmmt_feb_2025}
-  - ${task_defs.aime_2025}
+  - ${task_defs.hmmt_feb_2025}
+  # - ${task_defs.aime_2025}

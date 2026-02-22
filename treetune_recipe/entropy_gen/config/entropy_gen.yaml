@@ -18,6 +18,7 @@ actor_rollout_ref:
     path: ???
   rollout:
     entropy_top_k: 0  # 0 = full-vocab entropy
+    calculate_log_probs: true  # Required for entropy extraction
     agent:
       default_agent_loop: entropy_single_turn_agent
 
