@@ -1,13 +1,5 @@
-hydra:
-  searchpath:
-    - file://treetune_verl/generation/config
-    - file://treetune_verl/tasks/config
-    - file://verl/trainer/config
-
-defaults:
-  - generation
-  - task_definitions@task_defs
-  - _self_
+# Shared entropy generation settings.
+# Not used directly — model-specific configs compose this via defaults.
 
 trainer:
   project_name: entropy_gen
@@ -16,11 +8,22 @@ trainer:
 actor_rollout_ref:
   model:
     path: ???
+    trust_remote_code: true
   rollout:
     entropy_top_k: 0  # 0 = full-vocab entropy
     calculate_log_probs: true  # Required for entropy extraction
+    prompt_length: 2048
+    response_length: 16384
+    gpu_memory_utilization: 0.7
+    temperature: 0.6
+    top_p: 0.95
     agent:
+      num_workers: 1
       default_agent_loop: entropy_single_turn_agent
+
+data:
+  max_prompt_length: 2048
+  trust_remote_code: true
 
 generation:
   custom_manager_cls: treetune_recipe.entropy_gen.agent_loop.EntropyGenerationLoopManager

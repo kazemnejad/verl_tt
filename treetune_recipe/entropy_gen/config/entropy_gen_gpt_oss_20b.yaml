@@ -1,0 +1,37 @@
+# GPT-OSS-20B entropy generation config
+#
+# Launch (HMMT default):
+#   python -m treetune_recipe.entropy_gen.main --config-name entropy_gen_gpt_oss_20b
+#
+# Launch (AIME '25):
+#   python -m treetune_recipe.entropy_gen.main --config-name entropy_gen_gpt_oss_20b \
+#     'train_tasks=[${task_defs.aime_2025}]' trainer.experiment_name=gpt-oss-20b_aime_2025
+
+hydra:
+  searchpath:
+    - file://treetune_verl/generation/config
+    - file://treetune_verl/tasks/config
+    - file://verl/trainer/config
+
+defaults:
+  - generation
+  - task_definitions@task_defs
+  - entropy_gen
+  - _self_
+
+trainer:
+  n_gpus_per_node: 2
+  experiment_name: gpt-oss-20b_hmmt_feb_2025
+
+actor_rollout_ref:
+  model:
+    path: lmsys/gpt-oss-20b-bf16
+  rollout:
+    tensor_model_parallel_size: 2  # BF16 ~40GB; TP=2 on A100 80GB
+    engine_kwargs:
+      sglang:
+        attention_backend: triton  # Required: GPT-OSS hybrid SWA+full attention
+
+data:
+  apply_chat_template_kwargs:
+    reasoning_effort: high  # Max CoT for entropy analysis
