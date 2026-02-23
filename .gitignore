@@ -1,3 +1,6 @@
+# Symlinked repos (not tracked, independent git repos)
+research-hub
+
 **/*.pt
 **/checkpoints
 **/wget-log

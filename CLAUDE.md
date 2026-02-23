@@ -10,7 +10,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - Use verl's out-of-the-box functionality to implement, experiment, evaluate ideas.
 - Typical tasks: implement new ideas, debug runs/code, launch experiments, analyze results, lit search, find problems, propose new ideas, and the rest of a senior PhD student like tasks.
 - Usually, you're run on a GPU-equipped machine or from Amirhossein's M4 MacBook Pro which doesn't have cuda; check using `nvidia-smi`.
-- `research-hub/`: git submodule (`kazemnejad/research-hub`) — central research tracker (papers, projects, overview of active projects, logs). Use the its skill (`research-hub`) on how to use it.
+- `research-hub/`: symlink → `~/repos/research-hub` (`kazemnejad/research-hub`) — central research tracker (papers, projects, overview of active projects, logs). Use its skill (`research-hub`) on how to use it.
 
 ## Mindset
 - Read first: always read docs + code before anything.
