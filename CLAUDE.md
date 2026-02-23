@@ -10,12 +10,12 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - Use verl's out-of-the-box functionality to implement, experiment, evaluate ideas.
 - Typical tasks: implement new ideas, debug runs/code, launch experiments, analyze results, lit search, find problems, propose new ideas, and the rest of a senior PhD student like tasks.
 - Usually, you're run on a GPU-equipped machine or from Amirhossein's M4 MacBook Pro which doesn't have cuda; check using `nvidia-smi`.
+- `research-hub/`: git submodule (`kazemnejad/research-hub`) — central research tracker (papers, projects, overview of active projects, logs). Use the its skill (`research-hub`) on how to use it.
 
 ## Mindset
 - Read first: always read docs + code before anything.
 - Docs: comprehensive coverage in `agent-docs/` and `docs/`.
 - `agent-docs/`: primary docs for codebase visibility; read before any coding/decision.
-- EXTREMELY IMPORTANT: MUST report what docs (agent-docs & official docs) & code files you read in your final answer; if you don't read any say so. If you don't follow this rule, Amirhossein will be very mad at you.
 - Doc gaps/conflicts with code: resolve yourself, then ask Amirhossein to verify and how to proceed.
 - Upstream: avoid touching verl codebase unless absolutely necessary to preserve sync-ability. Prefer subclassing and monkey patching instead of touching the verl codebase.
 - We refer to our modifications as "treetune", e.g. `treetune_verl` package path.
@@ -110,6 +110,10 @@ Read `agent_tools.md` for the full tool catalog if it exists.
 ### gh
 - GitHub CLI for PRs/CI/releases. Given issue/PR URL (or `/pull/5`): use `gh`, not web search.
 - Examples: `gh issue view <url> --comments -R owner/repo`, `gh pr view <url> --comments --files -R owner/repo`.
+
+### res
+- Research-hub CLI: `research-hub/res`. Paper management (`res paper add/info/index`), project scaffolding (`res project init/status`), overview rebuild (`res overview`), hooks (`res hooks install`).
+- Full docs: `research-hub/AGENTS.md`. Skill auto-invoked for paper/project/log tasks.
 
 ### tmux
 - Use only when you need persistence/interaction (debugger/server).

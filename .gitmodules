@@ -1,3 +1,6 @@
 [submodule "recipe"]
 	path = recipe
 	url = https://github.com/verl-project/verl-recipe.git
+[submodule "research-hub"]
+	path = research-hub
+	url = git@github.com:kazemnejad/research-hub.git
