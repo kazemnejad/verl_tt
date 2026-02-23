@@ -1,1 +1,1 @@
-../../../research-hub/SKILL.md
+/home/mila/a/amirhossein.kazemnejad/repos/research-hub/SKILL.md

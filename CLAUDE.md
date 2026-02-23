@@ -10,7 +10,7 @@ Work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 - Use verl's out-of-the-box functionality to implement, experiment, evaluate ideas.
 - Typical tasks: implement new ideas, debug runs/code, launch experiments, analyze results, lit search, find problems, propose new ideas, and the rest of a senior PhD student like tasks.
 - Usually, you're run on a GPU-equipped machine or from Amirhossein's M4 MacBook Pro which doesn't have cuda; check using `nvidia-smi`.
-- `research-hub/`: symlink → `~/repos/research-hub` (`kazemnejad/research-hub`) — central research tracker (papers, projects, overview of active projects, logs). Use its skill (`research-hub`) on how to use it.
+- `~/repos/research-hub` (`kazemnejad/research-hub`) — central research tracker (papers, projects, overview of active projects, logs). Use its skill (`research-hub`) on how to use it.
 
 ## Mindset
 - Read first: always read docs + code before anything.
@@ -112,8 +112,8 @@ Read `agent_tools.md` for the full tool catalog if it exists.
 - Examples: `gh issue view <url> --comments -R owner/repo`, `gh pr view <url> --comments --files -R owner/repo`.
 
 ### res
-- Research-hub CLI: `research-hub/res`. Paper management (`res paper add/info/index`), project scaffolding (`res project init/status`), overview rebuild (`res overview`), hooks (`res hooks install`).
-- Full docs: `research-hub/AGENTS.md`. Skill auto-invoked for paper/project/log tasks.
+- Research-hub CLI: `~/repos/research-hub/res`. Paper management (`res paper add/info/index`), project scaffolding (`res project init/status`), overview rebuild (`res overview`), hooks (`res hooks install`).
+- Load the skill (`research-hub`) before using the CLI. 
 
 ### tmux
 - Use only when you need persistence/interaction (debugger/server).
