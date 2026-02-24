@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import Counter
+
+import pytest
 from omegaconf import OmegaConf
 
 
@@ -207,3 +210,83 @@ class TestLiveCodeBenchFiltering:
         ds = self._build_from_rows(self._ROWS, {"difficulty_filter": ["hard"]})
         assert len(ds) == 1
         assert ds[0]["extra_info"]["difficulty"] == "hard"
+
+
+# ---------------------------------------------------------------------------
+# Integration test — hits HuggingFace
+# ---------------------------------------------------------------------------
+
+
+def _load_lcb_from_hf():
+    """Download real LCB JSONL files from HuggingFace and load as HF Dataset.
+
+    Workaround: ``datasets>=4.0`` dropped loading-script support, but the
+    ``livecodebench/code_generation_lite`` repo still ships one.  We fetch the
+    raw JSONL shards via ``hf_hub_download`` instead.
+    """
+    from huggingface_hub import hf_hub_download
+    from datasets import load_dataset as _ld
+
+    repo = "livecodebench/code_generation_lite"
+    shards = [f"test{s}.jsonl" for s in ["", "2", "3", "4", "5", "6"]]
+    paths = [hf_hub_download(repo_id=repo, filename=f, repo_type="dataset") for f in shards]
+    return _ld("json", data_files=paths, split="train")
+
+
+@pytest.mark.slow
+def test_livecodebench_builds_from_hf():
+    """Integration: load real LCB data, build dataset, check schema."""
+    from unittest.mock import patch
+
+    cfg = OmegaConf.create(
+        {
+            "loading_params": {
+                "args": ["livecodebench/code_generation_lite"],
+                "kwargs": {"split": "test", "trust_remote_code": True},
+            },
+            "prompt_template": "{question_content}",
+            "data_source": "livecodebench",
+        }
+    )
+
+    from treetune_verl.tasks.livecodebench_task import LiveCodeBenchTask
+
+    task = LiveCodeBenchTask(cfg, cache_dir="/tmp/test_lcb_cache")
+
+    # Patch _load_from_hf to work around datasets>=4.0 dropping loading scripts.
+    # Data still comes from HuggingFace Hub — only the load mechanism differs.
+    with patch.object(task, "_load_from_hf", side_effect=lambda: _load_lcb_from_hf()):
+        ds = task.build_dataset()
+
+    # --- basic length ---
+    assert len(ds) > 0, "Dataset should not be empty"
+
+    # --- schema of first row ---
+    row = ds[0]
+    for key in ("prompt", "data_source", "extra_info", "reward_model"):
+        assert key in row, f"Missing key: {key}"
+
+    # --- prompt structure: [system, user] ---
+    prompt = row["prompt"]
+    assert isinstance(prompt, list) and len(prompt) == 2, (
+        f"Expected 2-message prompt, got {len(prompt)}"
+    )
+    assert prompt[0]["role"] == "system"
+
+    # --- extra_info fields ---
+    info = row["extra_info"]
+    for field in ("question_id", "platform", "difficulty", "starter_code", "index"):
+        assert field in info, f"extra_info missing: {field}"
+
+    # --- reward_model fields ---
+    rm = row["reward_model"]
+    assert "style" in rm, "reward_model missing 'style'"
+    assert "test_cases" in rm, "reward_model missing 'test_cases'"
+
+    # --- stats (for visibility) ---
+    platforms = Counter(r["extra_info"]["platform"] for r in ds)
+    difficulties = Counter(r["extra_info"]["difficulty"] for r in ds)
+    print(f"\n--- LiveCodeBench dataset stats ---")
+    print(f"Total rows: {len(ds)}")
+    print(f"Platforms:    {dict(platforms)}")
+    print(f"Difficulties: {dict(difficulties)}")
