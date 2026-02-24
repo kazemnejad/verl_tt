@@ -136,3 +136,74 @@ class TestLiveCodeBenchMapFn:
 
         result_func = fn(FUNCTIONAL_ROW, 0)
         assert FUNCTIONAL_ROW["question_content"] in result_func["prompt"][1]["content"]
+
+
+class TestLiveCodeBenchFiltering:
+    """Tests for LiveCodeBenchTask.build_dataset() difficulty filtering."""
+
+    _ROWS = [
+        {
+            "question_content": "Easy problem",
+            "starter_code": "",
+            "question_id": "q1",
+            "platform": "atcoder",
+            "difficulty": "easy",
+            "public_test_cases": '[{"input": "1", "output": "2", "testtype": "stdin"}]',
+            "question_title": "Easy",
+            "contest_id": "c1",
+            "contest_date": "2024-01-01",
+        },
+        {
+            "question_content": "Medium problem",
+            "starter_code": "",
+            "question_id": "q2",
+            "platform": "atcoder",
+            "difficulty": "medium",
+            "public_test_cases": '[{"input": "1", "output": "2", "testtype": "stdin"}]',
+            "question_title": "Medium",
+            "contest_id": "c2",
+            "contest_date": "2024-02-01",
+        },
+        {
+            "question_content": "Hard problem",
+            "starter_code": "",
+            "question_id": "q3",
+            "platform": "atcoder",
+            "difficulty": "hard",
+            "public_test_cases": '[{"input": "1", "output": "2", "testtype": "stdin"}]',
+            "question_title": "Hard",
+            "contest_id": "c3",
+            "contest_date": "2024-03-01",
+        },
+    ]
+
+    def _build_from_rows(self, rows: list[dict], overrides: dict | None = None):
+        """Build a dataset from in-memory rows through LiveCodeBenchTask."""
+        from unittest.mock import patch
+
+        from datasets import Dataset as HFDataset
+
+        task = _make_task(overrides)
+        mock_ds = HFDataset.from_list(rows)
+        with patch.object(task, "_load_from_hf", return_value=mock_ds):
+            return task.build_dataset()
+
+    def test_no_filtering_by_default(self):
+        """All difficulties pass through when no filter is set."""
+        ds = self._build_from_rows(self._ROWS)
+        assert len(ds) == 3
+
+    def test_difficulty_filter(self):
+        """difficulty_filter: [easy, medium] drops hard problems."""
+        ds = self._build_from_rows(
+            self._ROWS, {"difficulty_filter": ["easy", "medium"]}
+        )
+        assert len(ds) == 2
+        difficulties = {row["extra_info"]["difficulty"] for row in ds}
+        assert difficulties == {"easy", "medium"}
+
+    def test_difficulty_filter_single(self):
+        """difficulty_filter: [hard] keeps only hard problems."""
+        ds = self._build_from_rows(self._ROWS, {"difficulty_filter": ["hard"]})
+        assert len(ds) == 1
+        assert ds[0]["extra_info"]["difficulty"] == "hard"
