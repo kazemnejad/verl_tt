@@ -72,3 +72,46 @@ hmmt_feb_2025:
   answer_key: answer
   prompt_template: *math_prompt
   data_source: hmmt_feb_2025
+
+# ---------------------------------------------------------------------------
+# Code tasks
+# ---------------------------------------------------------------------------
+
+_livecodebench_cls: &livecodebench_cls
+  path: treetune_verl/tasks/livecodebench_task.py
+  name: LiveCodeBenchTask
+
+livecodebench:
+  custom_cls: *livecodebench_cls
+  loading_params:
+    args: [livecodebench/code_generation_lite]
+    kwargs: { split: test, trust_remote_code: true }
+  prompt_template: "{question_content}"
+  data_source: livecodebench
+
+livecodebench_easy:
+  custom_cls: *livecodebench_cls
+  loading_params:
+    args: [livecodebench/code_generation_lite]
+    kwargs: { split: test, trust_remote_code: true }
+  prompt_template: "{question_content}"
+  data_source: livecodebench_easy
+  difficulty_filter: [easy]
+
+livecodebench_medium:
+  custom_cls: *livecodebench_cls
+  loading_params:
+    args: [livecodebench/code_generation_lite]
+    kwargs: { split: test, trust_remote_code: true }
+  prompt_template: "{question_content}"
+  data_source: livecodebench_medium
+  difficulty_filter: [medium]
+
+livecodebench_hard:
+  custom_cls: *livecodebench_cls
+  loading_params:
+    args: [livecodebench/code_generation_lite]
+    kwargs: { split: test, trust_remote_code: true }
+  prompt_template: "{question_content}"
+  data_source: livecodebench_hard
+  difficulty_filter: [hard]

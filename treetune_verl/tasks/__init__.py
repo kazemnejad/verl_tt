@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from treetune_verl.tasks.livecodebench_task import LiveCodeBenchTask
 from treetune_verl.tasks.math_like_task import MathLikeTask
 from treetune_verl.tasks.task import (
     Task,
@@ -21,6 +22,7 @@ from treetune_verl.tasks.task import (
 )
 
 __all__ = [
+    "LiveCodeBenchTask",
     "MathLikeTask",
     "Task",
     "get_dataset_paths",
