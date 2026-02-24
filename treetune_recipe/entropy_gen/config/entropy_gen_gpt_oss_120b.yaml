@@ -1,0 +1,37 @@
+# GPT-OSS-120B entropy generation config
+#
+# Launch (HMMT default):
+#   python -m treetune_recipe.entropy_gen.main --config-name entropy_gen_gpt_oss_120b
+#
+# Launch (AIME '25):
+#   python -m treetune_recipe.entropy_gen.main --config-name entropy_gen_gpt_oss_120b \
+#     'train_tasks=[${task_defs.aime_2025}]' trainer.experiment_name=gpt-oss-120b_aime_2025
+
+hydra:
+  searchpath:
+    - file://treetune_verl/generation/config
+    - file://treetune_verl/tasks/config
+    - file://verl/trainer/config
+
+defaults:
+  - generation
+  - task_definitions@task_defs
+  - entropy_gen
+  - _self_
+
+trainer:
+  n_gpus_per_node: 4
+  experiment_name: gpt-oss-120b_hmmt_feb_2025
+
+actor_rollout_ref:
+  model:
+    path: lmsys/gpt-oss-120b-bf16
+  rollout:
+    tensor_model_parallel_size: 4
+    engine_kwargs:
+      sglang:
+        attention_backend: triton  # Required: GPT-OSS hybrid SWA+full attention
+
+data:
+  apply_chat_template_kwargs:
+    reasoning_effort: high
